@@ -114,9 +114,15 @@ npm run dev   # → http://localhost:5173, proxies /api to localhost:8000
 7. Change provider order in **Settings**, save, restart container → setting
    persists.
 8. Trigger a Swing Music rescan → new files indexed without tag errors.
+9. In **Settings → General → Performance**, set total = 6 and per-provider = 3.
+   Paste an album with ≥6 tracks → observe up to 6 simultaneous `downloading`
+   entries in the History/Queue, with no more than 3 hitting the same provider.
 
 ## Notes
 
+- Parallel downloads: configured in **Settings → General → Performance**.
+  Defaults to 4 total / 2 per provider. Live-resizable, no restart needed.
+  Lower the per-provider cap if you observe HTTP 429 from a provider.
 - Spotify rate-limiting (HTTP 429) is handled by the underlying module with
   `Retry-After` honoring.
 - The Python module exposes no per-byte progress callback; this UI shows

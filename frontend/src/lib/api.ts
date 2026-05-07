@@ -64,6 +64,8 @@ export type SettingsDTO = {
     embed_genre: boolean;
     sp_dc: string;
     qobuz_token: string;
+    concurrency_total: number;
+    concurrency_per_provider: number;
   };
   file_management: {
     track_template: string;
