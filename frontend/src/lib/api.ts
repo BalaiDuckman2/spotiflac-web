@@ -169,7 +169,12 @@ export const api = {
     }),
 
   download: (url: string, track_ids: string[]) =>
-    request<{ job_ids: string[]; skipped: number }>('/api/download', {
+    request<{
+      job_ids: string[];
+      skipped_existing: number;
+      unmatched: number;
+      preview_tracks: number;
+    }>('/api/download', {
       method: 'POST',
       body: JSON.stringify({ url, track_ids }),
     }),

@@ -66,11 +66,45 @@ export default function FetchPage() {
     );
   }, [preview, alreadyPresent]);
 
+  const [feedback, setFeedback] = useState<{
+    type: 'ok' | 'warn' | 'error';
+    text: string;
+  } | null>(null);
+
   const downloadMut = useMutation({
     mutationFn: (ids: string[]) => api.download(url, ids),
-    onSuccess: () => {
+    onSuccess: (data, requestedIds) => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
+      const queued = data.job_ids.length;
+      const skipped = data.skipped_existing;
+      const unmatched = data.unmatched;
+      if (queued === 0) {
+        const parts: string[] = [];
+        if (skipped > 0) parts.push(`${skipped} already on disk (skipped)`);
+        if (unmatched > 0)
+          parts.push(
+            `${unmatched} not found in the playlist preview (only ${data.preview_tracks} tracks were returned)`,
+          );
+        setFeedback({
+          type: 'warn',
+          text: `Nothing queued. ${parts.join(' · ') || 'Reason unknown.'}`,
+        });
+        return;
+      }
+      const extras: string[] = [];
+      if (skipped > 0) extras.push(`${skipped} skipped (already on disk)`);
+      if (unmatched > 0)
+        extras.push(`${unmatched} missing from preview`);
+      setFeedback({
+        type: extras.length > 0 ? 'warn' : 'ok',
+        text:
+          `Queued ${queued} of ${requestedIds.length}` +
+          (extras.length > 0 ? ` · ${extras.join(' · ')}` : ''),
+      });
       navigate('/downloads');
+    },
+    onError: (err: Error) => {
+      setFeedback({ type: 'error', text: err.message });
     },
   });
 
@@ -129,6 +163,26 @@ export default function FetchPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-8 pb-24 pt-8">
+      {feedback && (
+        <div
+          className={cn(
+            'mb-4 rounded-lg border px-4 py-3 text-sm',
+            feedback.type === 'ok' && 'border-green-200 bg-green-50 text-green-800',
+            feedback.type === 'warn' && 'border-yellow-200 bg-yellow-50 text-yellow-900',
+            feedback.type === 'error' && 'border-red-200 bg-red-50 text-red-700',
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span>{feedback.text}</span>
+            <button
+              onClick={() => setFeedback(null)}
+              className="text-xs opacity-60 hover:opacity-100"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
       <header className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex gap-5">
           <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100">

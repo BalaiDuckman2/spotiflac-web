@@ -1,22 +1,24 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core.metadata import fetch_preview, is_valid_spotify_url
+from ..core.metadata import cached_preview, is_valid_spotify_url
 from ..core.paths import build_track_path, resolve_existing
 from ..core.queue import Job, get_queue, make_job_id
 from ..core.settings import MUSIC_DIR, get_settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 class DownloadRequest(BaseModel):
     url: str
     track_ids: list[str]
-    # Optional override; if absent we re-fetch the URL preview to build context
+    # Optional override; if absent we use the cached/re-fetched preview to build context
     kind: str | None = None
 
 
@@ -28,17 +30,28 @@ def enqueue_download(req: DownloadRequest):
         raise HTTPException(400, "track_ids is empty")
 
     settings = get_settings()
-    preview = fetch_preview(req.url)
+    preview = cached_preview(req.url)
     selected_ids = set(req.track_ids)
 
-    by_id = {t["id"]: t for t in preview.tracks}
     chosen = [
         (t, i + 1)
         for i, t in enumerate(preview.tracks)
         if t["id"] in selected_ids
     ]
+    matched_ids = {t["id"] for t, _ in chosen}
+    unmatched = selected_ids - matched_ids
+
+    logger.info(
+        "download: url=%s preview_tracks=%d requested=%d matched=%d unmatched=%d",
+        req.url, len(preview.tracks), len(req.track_ids), len(chosen), len(unmatched),
+    )
+
     if not chosen:
-        raise HTTPException(400, "no matching tracks")
+        raise HTTPException(
+            400,
+            f"no matching tracks (preview has {len(preview.tracks)}, "
+            f"none of the {len(req.track_ids)} requested IDs were found)",
+        )
 
     q = get_queue()
     job_ids: list[str] = []
@@ -99,4 +112,14 @@ def enqueue_download(req: DownloadRequest):
         q.enqueue(job)
         job_ids.append(jid)
 
-    return {"job_ids": job_ids, "skipped": len(chosen) - len(job_ids)}
+    skipped = len(chosen) - len(job_ids)
+    logger.info(
+        "download: enqueued=%d skipped_existing=%d unmatched=%d",
+        len(job_ids), skipped, len(unmatched),
+    )
+    return {
+        "job_ids":          job_ids,
+        "skipped_existing": skipped,
+        "unmatched":        len(unmatched),
+        "preview_tracks":   len(preview.tracks),
+    }

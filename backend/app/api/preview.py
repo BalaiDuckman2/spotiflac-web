@@ -3,9 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core.metadata import fetch_preview, is_valid_spotify_url
+from ..core.metadata import fetch_preview, is_valid_spotify_url, _preview_cache, _preview_lock
 from ..core.library import check_already_present
 from ..core.history_db import record_fetch
+import time as _time
 
 router = APIRouter()
 
@@ -29,6 +30,11 @@ def preview(req: PreviewRequest):
         result = fetch_preview(url)
     except Exception as e:
         raise HTTPException(502, f"Failed to fetch metadata: {e}") from e
+    # Warm the cache so /download doesn't re-fetch (which costs another ~6s
+    # for a 1200-track playlist and risks Spotify rate limits or partial
+    # truncation on flaky responses).
+    with _preview_lock:
+        _preview_cache[url] = (_time.monotonic(), result)
     record_fetch(
         kind=result.kind,
         spotify_id=result.id,

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 import re
+import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from SpotiFLAC.providers.spotify_metadata import SpotifyMetadataClient, parse_spotify_url
 from SpotiFLAC.core.models import TrackMetadata
+
+logger = logging.getLogger(__name__)
 
 
 _client: SpotifyMetadataClient | None = None
@@ -17,6 +22,38 @@ def get_client() -> SpotifyMetadataClient:
     if _client is None:
         _client = SpotifyMetadataClient(timeout_s=15)
     return _client
+
+
+# In-memory preview cache: avoids re-fetching huge playlists on every action.
+# Keyed by Spotify URL. TTL is short enough that user-visible staleness is fine.
+_PREVIEW_CACHE_TTL_S = 300.0   # 5 minutes
+_preview_cache: dict[str, tuple[float, "PreviewResult"]] = {}
+_preview_lock = threading.Lock()
+
+
+def cached_preview(url: str) -> "PreviewResult":
+    """Return cached PreviewResult for `url`, fetching only if missing/stale."""
+    now = time.monotonic()
+    with _preview_lock:
+        entry = _preview_cache.get(url)
+        if entry and now - entry[0] < _PREVIEW_CACHE_TTL_S:
+            return entry[1]
+    result = fetch_preview(url)
+    with _preview_lock:
+        _preview_cache[url] = (now, result)
+        # Cap memory: keep at most 32 entries.
+        if len(_preview_cache) > 32:
+            oldest = min(_preview_cache.items(), key=lambda kv: kv[1][0])[0]
+            _preview_cache.pop(oldest, None)
+    return result
+
+
+def invalidate_preview_cache(url: str | None = None) -> None:
+    with _preview_lock:
+        if url is None:
+            _preview_cache.clear()
+        else:
+            _preview_cache.pop(url, None)
 
 
 def track_to_dto(t: TrackMetadata, *, position: int | None = None) -> dict[str, Any]:

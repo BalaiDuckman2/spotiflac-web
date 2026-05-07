@@ -214,7 +214,7 @@ def complete_album(req: CompleteRequest):
     return {
         "missing_count": len(missing_track_ids),
         "job_ids":       result["job_ids"],
-        "skipped":       result["skipped"],
+        "skipped":       result.get("skipped_existing", 0),
     }
 
 
