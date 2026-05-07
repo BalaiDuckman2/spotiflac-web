@@ -35,6 +35,8 @@ class GeneralSettings(BaseModel):
     embed_genre: bool = True
     sp_dc: str = ""
     qobuz_token: str = ""
+    concurrency_total: int = Field(default=4, ge=1, le=16)
+    concurrency_per_provider: int = Field(default=2, ge=1, le=8)
 
 
 class Settings(BaseModel):

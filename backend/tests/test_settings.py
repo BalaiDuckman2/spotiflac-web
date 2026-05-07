@@ -50,3 +50,40 @@ def test_seed_from_env(tmp_path, monkeypatch):
     importlib.reload(settings_mod)
     s = settings_mod.load_settings()
     assert s.general.providers == ["qobuz", "tidal"]
+
+
+import pytest
+from pydantic import ValidationError
+
+from app.core.settings import GeneralSettings, Settings
+
+
+def test_concurrency_defaults():
+    g = GeneralSettings()
+    assert g.concurrency_total == 4
+    assert g.concurrency_per_provider == 2
+
+
+def test_concurrency_bounds():
+    with pytest.raises(ValidationError):
+        GeneralSettings(concurrency_total=0)
+    with pytest.raises(ValidationError):
+        GeneralSettings(concurrency_total=17)
+    with pytest.raises(ValidationError):
+        GeneralSettings(concurrency_per_provider=0)
+    with pytest.raises(ValidationError):
+        GeneralSettings(concurrency_per_provider=9)
+
+
+def test_settings_loads_existing_json_without_concurrency_fields(tmp_path, monkeypatch):
+    """Existing settings.json without the new fields should still load (backward compat)."""
+    monkeypatch.setattr("app.core.settings.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("app.core.settings.SETTINGS_PATH", tmp_path / "settings.json")
+    (tmp_path / "settings.json").write_text(
+        '{"general": {"providers": ["tidal"], "quality": "LOSSLESS"}, "file_management": {}}',
+        encoding="utf-8",
+    )
+    from app.core.settings import load_settings
+    s = load_settings()
+    assert s.general.concurrency_total == 4
+    assert s.general.concurrency_per_provider == 2
