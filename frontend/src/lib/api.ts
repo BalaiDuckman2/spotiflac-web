@@ -172,6 +172,7 @@ export const api = {
     request<{
       job_ids: string[];
       skipped_existing: number;
+      errored: number;
       unmatched: number;
       preview_tracks: number;
     }>('/api/download', {

@@ -78,9 +78,11 @@ export default function FetchPage() {
       const queued = data.job_ids.length;
       const skipped = data.skipped_existing;
       const unmatched = data.unmatched;
+      const errored = data.errored ?? 0;
       if (queued === 0) {
         const parts: string[] = [];
         if (skipped > 0) parts.push(`${skipped} already on disk (skipped)`);
+        if (errored > 0) parts.push(`${errored} errored (see server logs)`);
         if (unmatched > 0)
           parts.push(
             `${unmatched} not found in the playlist preview (only ${data.preview_tracks} tracks were returned)`,
@@ -93,8 +95,8 @@ export default function FetchPage() {
       }
       const extras: string[] = [];
       if (skipped > 0) extras.push(`${skipped} skipped (already on disk)`);
-      if (unmatched > 0)
-        extras.push(`${unmatched} missing from preview`);
+      if (errored > 0) extras.push(`${errored} errored`);
+      if (unmatched > 0) extras.push(`${unmatched} missing from preview`);
       setFeedback({
         type: extras.length > 0 ? 'warn' : 'ok',
         text:

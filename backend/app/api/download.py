@@ -55,71 +55,81 @@ def enqueue_download(req: DownloadRequest):
 
     q = get_queue()
     job_ids: list[str] = []
+    errored = 0
 
     is_album = preview.kind == "album"
     is_playlist = preview.kind == "playlist"
 
     for track, position in chosen:
-        track_meta_for_path = {
-            "title": track["title"],
-            "artist": track["artists"],
-            "album": track["album"],
-            "album_artist": track.get("album_artist") or track["artists"],
-            "track": track.get("track_number") or position,
-            "year": track.get("year") or "",
-            "isrc": track.get("isrc") or "",
-            "disc": track.get("disc_number") or 1,
-        }
-        ctx = (
-            {"playlist": preview.title, "position": position}
-            if is_playlist
-            else {}
-        )
-        target = build_track_path(
-            settings.file_management,
-            kind=preview.kind,
-            track_meta=track_meta_for_path,
-            context=ctx,
-            base_dir=MUSIC_DIR,
-        )
-        resolved = resolve_existing(target, settings.file_management.on_existing)
-        if resolved is None:
-            # Skip — already exists
+        try:
+            track_meta_for_path = {
+                "title": track.get("title") or "",
+                "artist": track.get("artists") or "",
+                "album": track.get("album") or "",
+                "album_artist": track.get("album_artist") or track.get("artists") or "",
+                "track": track.get("track_number") or position,
+                "year": track.get("year") or "",
+                "isrc": track.get("isrc") or "",
+                "disc": track.get("disc_number") or 1,
+            }
+            ctx = (
+                {"playlist": preview.title, "position": position}
+                if is_playlist
+                else {}
+            )
+            target = build_track_path(
+                settings.file_management,
+                kind=preview.kind,
+                track_meta=track_meta_for_path,
+                context=ctx,
+                base_dir=MUSIC_DIR,
+            )
+            resolved = resolve_existing(target, settings.file_management.on_existing)
+            if resolved is None:
+                # Skip — already exists
+                continue
+            target_str = str(resolved)
+
+            jid = make_job_id()
+            job = Job(
+                id=jid,
+                spotify_track_id=track["id"],
+                track_meta=track,
+                target_path=target_str,
+                services=list(settings.general.providers),
+                quality=settings.general.quality,
+                embed_lyrics=settings.general.embed_lyrics,
+                enrich_metadata=True,
+                sp_dc=settings.general.sp_dc,
+                qobuz_token=settings.general.qobuz_token,
+                position=position,
+                is_album=is_album,
+                context={
+                    "kind": preview.kind,
+                    "title": preview.title,
+                    "url": req.url,
+                    "cover_url": preview.cover_url,
+                },
+            )
+            q.enqueue(job)
+            job_ids.append(jid)
+        except Exception:
+            errored += 1
+            logger.exception(
+                "download: failed to enqueue track id=%s position=%s title=%r",
+                track.get("id"), position, track.get("title"),
+            )
             continue
-        target_str = str(resolved)
 
-        jid = make_job_id()
-        job = Job(
-            id=jid,
-            spotify_track_id=track["id"],
-            track_meta=track,
-            target_path=target_str,
-            services=list(settings.general.providers),
-            quality=settings.general.quality,
-            embed_lyrics=settings.general.embed_lyrics,
-            enrich_metadata=True,
-            sp_dc=settings.general.sp_dc,
-            qobuz_token=settings.general.qobuz_token,
-            position=position,
-            is_album=is_album,
-            context={
-                "kind": preview.kind,
-                "title": preview.title,
-                "url": req.url,
-                "cover_url": preview.cover_url,
-            },
-        )
-        q.enqueue(job)
-        job_ids.append(jid)
-
-    skipped = len(chosen) - len(job_ids)
+    skipped = len(chosen) - len(job_ids) - errored
     logger.info(
-        "download: enqueued=%d skipped_existing=%d unmatched=%d",
-        len(job_ids), skipped, len(unmatched),
+        "download: enqueued=%d skipped_existing=%d errored=%d unmatched=%d",
+        len(job_ids), skipped, errored, len(unmatched),
     )
     return {
         "job_ids":          job_ids,
         "skipped_existing": skipped,
+        "errored":          errored,
         "unmatched":        len(unmatched),
         "preview_tracks":   len(preview.tracks),
     }
