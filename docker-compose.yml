@@ -1,0 +1,17 @@
+services:
+  spotiflac-web:
+    build: .
+    image: spotiflac-web:latest
+    container_name: spotiflac-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Map your music library here. Swing Music will index this same directory.
+      - ${MUSIC_PATH:-./music}:/music
+      - ./config:/config
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+      LOG_LEVEL: INFO
+      # Optional: seed providers at first launch (overridable from Settings UI later)
+      # SPOTIFLAC_INITIAL_PROVIDERS: tidal,qobuz,amazon

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Editor
+.idea/
+.vscode/
+
+# Runtime
+config/
+music/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local screenshots / scratch
+image.png
+image copy*.png
+*.err.log
+backend.log
+
+# TS compile artifacts (project uses Vite — only .tsx/.ts is source)
+frontend/src/**/*.js
+
