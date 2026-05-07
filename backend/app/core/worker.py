@@ -291,7 +291,8 @@ def start_worker() -> None:
 
 
 def stop_worker() -> None:
-    global _pool
+    global _pool, _sems
     if _pool is not None:
         _pool.stop()
         _pool = None
+    _sems = None

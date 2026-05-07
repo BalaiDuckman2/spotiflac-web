@@ -60,7 +60,10 @@ class ProviderSemaphores:
             try:
                 sem.release()
             except ValueError:
-                # Released more than acquired — ignore (resize edge case).
+                # If resize swapped the semaphore between acquire and release,
+                # this releases a slot we didn't take on the new sem; the slot
+                # on the orphaned old sem is intentionally abandoned (it gets
+                # GC'd). The new sem's cap stays correct.
                 pass
 
     def resize(self, new_per_provider: int) -> None:
