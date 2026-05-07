@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-from typing import Dict
 
 
 class ProviderSemaphores:
@@ -15,17 +14,11 @@ class ProviderSemaphores:
     """
 
     def __init__(self, per_provider: int) -> None:
+        if per_provider < 1:
+            raise ValueError(f"per_provider must be >= 1, got {per_provider}")
         self._per_provider = per_provider
-        self._sems: Dict[str, threading.BoundedSemaphore] = {}
+        self._sems: dict[str, threading.BoundedSemaphore] = {}
         self._lock = threading.Lock()
-
-    def _get_or_create(self, provider: str) -> threading.BoundedSemaphore:
-        with self._lock:
-            sem = self._sems.get(provider)
-            if sem is None:
-                sem = threading.BoundedSemaphore(self._per_provider)
-                self._sems[provider] = sem
-            return sem
 
     def acquire(
         self,
@@ -37,14 +30,27 @@ class ProviderSemaphores:
 
         Returns True on acquisition, False if cancelled before acquiring.
         Re-fetches the semaphore on each poll so that a `resize` mid-wait is
-        picked up immediately on the next iteration.
+        picked up immediately on the next iteration. If a resize swaps the
+        semaphore between the lock-protected lookup and the timed acquire,
+        the slot is released on the old semaphore and the loop retries to
+        avoid briefly exceeding the new cap.
         """
-        self._get_or_create(provider)  # ensure entry exists
         while not cancel_event.is_set():
             with self._lock:
-                sem = self._sems[provider]
+                sem = self._sems.get(provider)
+                if sem is None:
+                    sem = threading.BoundedSemaphore(self._per_provider)
+                    self._sems[provider] = sem
             if sem.acquire(timeout=poll_s):
-                return True
+                with self._lock:
+                    current = self._sems.get(provider)
+                if current is sem:
+                    return True
+                # Resize swapped the sem mid-wait; release the old one and retry.
+                try:
+                    sem.release()
+                except ValueError:
+                    pass
         return False
 
     def release(self, provider: str) -> None:
@@ -59,6 +65,10 @@ class ProviderSemaphores:
 
     def resize(self, new_per_provider: int) -> None:
         """Swap all semaphores to the new cap. Old slot holders keep their slots."""
+        if new_per_provider < 1:
+            raise ValueError(
+                f"new_per_provider must be >= 1, got {new_per_provider}"
+            )
         with self._lock:
             self._per_provider = new_per_provider
             self._sems = {

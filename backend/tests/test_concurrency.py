@@ -96,3 +96,14 @@ def test_resize_shrink_does_not_revoke_existing():
     cancel.set()
     t.join(timeout=1.0)
     assert result == [False]  # blocked because new cap is 2
+
+
+def test_init_rejects_invalid_cap():
+    with pytest.raises(ValueError):
+        ProviderSemaphores(per_provider=0)
+
+
+def test_resize_rejects_invalid_cap():
+    sems = ProviderSemaphores(per_provider=1)
+    with pytest.raises(ValueError):
+        sems.resize(0)
