@@ -110,6 +110,9 @@ export const api = {
 
   cancelAll: () => request<{ cancelled: number }>('/api/jobs/cancel-all', { method: 'POST' }),
 
+  clearFinished: () =>
+    request<{ cleared: number }>('/api/jobs/clear-finished', { method: 'POST' }),
+
   rescan: () => request<{ indexed_keys: number }>('/api/library/rescan', { method: 'POST' }),
 
   history: {

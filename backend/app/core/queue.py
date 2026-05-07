@@ -170,6 +170,18 @@ class JobQueue:
         with self._lock:
             return [j for j in self._jobs.values() if j.status in ("queued", "downloading")]
 
+    def clear_finished(self) -> int:
+        """Remove all completed/failed/cancelled jobs from memory. Returns count removed."""
+        with self._lock:
+            done_ids = [
+                j.id
+                for j in self._jobs.values()
+                if j.status in ("ok", "failed", "cancelled")
+            ]
+            for jid in done_ids:
+                self._jobs.pop(jid, None)
+            return len(done_ids)
+
     def prune(self, keep_recent: int = 200) -> int:
         """Drop completed/failed/cancelled beyond a recent window. Returns count removed."""
         with self._lock:

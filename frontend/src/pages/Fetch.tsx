@@ -70,7 +70,7 @@ export default function FetchPage() {
     mutationFn: (ids: string[]) => api.download(url, ids),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
-      navigate('/history');
+      navigate('/downloads');
     },
   });
 

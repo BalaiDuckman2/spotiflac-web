@@ -6,52 +6,93 @@ import { api, JobDTO } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDate, formatDuration } from '@/lib/format';
 
-export default function History() {
-  const [tab, setTab] = useState<'jobs' | 'downloads' | 'fetches'>('jobs');
+type Tab = 'queue' | 'recent' | 'library' | 'fetches';
 
-  return (
-    <div className="mx-auto max-w-6xl px-8 pb-16 pt-8">
-      <h1 className="text-2xl font-bold">History</h1>
-      <div className="mt-4 flex gap-1 border-b border-gray-200">
-        {(['jobs', 'downloads', 'fetches'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              'border-b-2 px-4 py-2 text-sm font-medium capitalize',
-              tab === t
-                ? 'border-yellow-400 text-yellow-700'
-                : 'border-transparent text-gray-500 hover:text-gray-800',
-            )}
-          >
-            {t === 'jobs' ? 'Queue' : t}
-          </button>
-        ))}
-      </div>
+export default function Downloads() {
+  const [tab, setTab] = useState<Tab>('queue');
 
-      <div className="mt-6">
-        {tab === 'jobs' && <JobsPanel />}
-        {tab === 'downloads' && <DownloadsPanel />}
-        {tab === 'fetches' && <FetchesPanel />}
-      </div>
-    </div>
-  );
-}
-
-function JobsPanel() {
-  const qc = useQueryClient();
   const jobsQ = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs(),
     refetchInterval: 2000,
   });
 
+  const jobs = jobsQ.data?.jobs ?? [];
+  const active = jobs.filter((j) => j.status === 'queued' || j.status === 'downloading');
+  const recent = jobs.filter((j) => j.status === 'ok' || j.status === 'failed' || j.status === 'cancelled');
+
+  return (
+    <div className="mx-auto max-w-6xl px-8 pb-16 pt-8">
+      <h1 className="text-2xl font-bold">Downloads</h1>
+
+      <div className="mt-4 flex gap-1 border-b border-gray-200">
+        <TabButton active={tab === 'queue'} onClick={() => setTab('queue')}>
+          Queue
+          {active.length > 0 && <Pill>{active.length}</Pill>}
+        </TabButton>
+        <TabButton active={tab === 'recent'} onClick={() => setTab('recent')}>
+          Recent
+          {recent.length > 0 && <Pill muted>{recent.length}</Pill>}
+        </TabButton>
+        <TabButton active={tab === 'library'} onClick={() => setTab('library')}>
+          Library
+        </TabButton>
+        <TabButton active={tab === 'fetches'} onClick={() => setTab('fetches')}>
+          Fetches
+        </TabButton>
+      </div>
+
+      <div className="mt-6">
+        {tab === 'queue' && <QueuePanel active={active} />}
+        {tab === 'recent' && <RecentPanel recent={recent} />}
+        {tab === 'library' && <LibraryPanel />}
+        {tab === 'fetches' && <FetchesPanel />}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium',
+        active
+          ? 'border-yellow-400 text-yellow-700'
+          : 'border-transparent text-gray-500 hover:text-gray-800',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Pill({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'rounded-full px-1.5 text-[11px] font-semibold',
+        muted ? 'bg-gray-100 text-gray-600' : 'bg-yellow-200 text-yellow-800',
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function QueuePanel({ active }: { active: JobDTO[] }) {
+  const qc = useQueryClient();
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelJob(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
-  });
-  const retry = useMutation({
-    mutationFn: (id: string) => api.retryJob(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
   });
   const remove = useMutation({
@@ -63,19 +104,31 @@ function JobsPanel() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
   });
 
-  const jobs = jobsQ.data?.jobs ?? [];
-  const active = jobs.filter((j) => j.status === 'queued' || j.status === 'downloading');
-  const finished = jobs.filter((j) => j.status !== 'queued' && j.status !== 'downloading');
+  const downloading = active.filter((j) => j.status === 'downloading').length;
+  const queued = active.filter((j) => j.status === 'queued').length;
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <div className="text-sm text-gray-600">
-          {active.length} active · {finished.length} done
+          {downloading > 0 && (
+            <span>
+              <span className="font-semibold text-yellow-700">{downloading}</span> downloading
+            </span>
+          )}
+          {downloading > 0 && queued > 0 && <span className="mx-2 text-gray-300">·</span>}
+          {queued > 0 && (
+            <span>
+              <span className="font-semibold">{queued}</span> queued
+            </span>
+          )}
+          {active.length === 0 && <span className="text-gray-400">Idle</span>}
         </div>
         {active.length > 0 && (
           <button
-            onClick={() => cancelAll.mutate()}
+            onClick={() => {
+              if (confirm(`Cancel ${active.length} job(s)?`)) cancelAll.mutate();
+            }}
             className="text-sm text-red-600 hover:underline"
           >
             Cancel all
@@ -83,38 +136,125 @@ function JobsPanel() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
-            <tr>
-              <th className="px-3 py-2">Track</th>
-              <th className="px-3 py-2">Album</th>
-              <th className="px-3 py-2">Duration</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Provider</th>
-              <th className="w-32 px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((j) => (
-              <JobRow
-                key={j.id}
-                job={j}
-                onCancel={() => cancel.mutate(j.id)}
-                onRetry={() => retry.mutate(j.id)}
-                onRemove={() => remove.mutate(j.id)}
-              />
-            ))}
-            {jobs.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                  No jobs yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <JobsTable
+        jobs={active}
+        emptyText="Nothing in queue. Paste a Spotify URL on Home to start a download."
+        onCancel={(id) => cancel.mutate(id)}
+        onRemove={(id) => remove.mutate(id)}
+      />
+    </div>
+  );
+}
+
+function RecentPanel({ recent }: { recent: JobDTO[] }) {
+  const qc = useQueryClient();
+  const retry = useMutation({
+    mutationFn: (id: string) => api.retryJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  });
+  const clear = useMutation({
+    mutationFn: () => api.clearFinished(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  });
+
+  const ok = recent.filter((j) => j.status === 'ok').length;
+  const failed = recent.filter((j) => j.status === 'failed').length;
+  const cancelled = recent.filter((j) => j.status === 'cancelled').length;
+
+  // Most recent first
+  const sorted = [...recent].sort((a, b) => {
+    const ta = a.finished_at ? Date.parse(a.finished_at) : 0;
+    const tb = b.finished_at ? Date.parse(b.finished_at) : 0;
+    return tb - ta;
+  });
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm text-gray-600">
+          {ok > 0 && (
+            <span>
+              <span className="font-semibold text-green-700">{ok}</span> done
+            </span>
+          )}
+          {ok > 0 && (failed > 0 || cancelled > 0) && <span className="mx-2 text-gray-300">·</span>}
+          {failed > 0 && (
+            <span>
+              <span className="font-semibold text-red-700">{failed}</span> failed
+            </span>
+          )}
+          {failed > 0 && cancelled > 0 && <span className="mx-2 text-gray-300">·</span>}
+          {cancelled > 0 && (
+            <span>
+              <span className="font-semibold text-gray-600">{cancelled}</span> cancelled
+            </span>
+          )}
+          {recent.length === 0 && <span className="text-gray-400">No recent activity</span>}
+        </div>
+        {recent.length > 0 && (
+          <button
+            onClick={() => clear.mutate()}
+            className="text-sm text-red-600 hover:underline"
+          >
+            Clear all
+          </button>
+        )}
       </div>
+
+      <JobsTable
+        jobs={sorted}
+        emptyText="Nothing here. Completed and failed downloads appear in this tab."
+        onRetry={(id) => retry.mutate(id)}
+      />
+    </div>
+  );
+}
+
+function JobsTable({
+  jobs,
+  emptyText,
+  onCancel,
+  onRemove,
+  onRetry,
+}: {
+  jobs: JobDTO[];
+  emptyText: string;
+  onCancel?: (id: string) => void;
+  onRemove?: (id: string) => void;
+  onRetry?: (id: string) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <table className="w-full text-sm">
+        <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
+          <tr>
+            <th className="px-3 py-2">Track</th>
+            <th className="px-3 py-2">Album</th>
+            <th className="px-3 py-2">Duration</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Provider</th>
+            <th className="w-32 px-3 py-2">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((j) => (
+            <JobRow
+              key={j.id}
+              job={j}
+              onCancel={onCancel ? () => onCancel(j.id) : undefined}
+              onRemove={onRemove ? () => onRemove(j.id) : undefined}
+              onRetry={onRetry ? () => onRetry(j.id) : undefined}
+            />
+          ))}
+          {jobs.length === 0 && (
+            <tr>
+              <td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-400">
+                {emptyText}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -122,13 +262,13 @@ function JobsPanel() {
 function JobRow({
   job,
   onCancel,
-  onRetry,
   onRemove,
+  onRetry,
 }: {
   job: JobDTO;
-  onCancel: () => void;
-  onRetry: () => void;
-  onRemove: () => void;
+  onCancel?: () => void;
+  onRemove?: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <tr className="border-b border-gray-100 last:border-b-0">
@@ -152,17 +292,17 @@ function JobRow({
       <td className="px-3 py-2 text-xs text-gray-600">{job.provider_used ?? '—'}</td>
       <td className="px-3 py-2">
         <div className="flex gap-1">
-          {job.status === 'queued' && (
+          {job.status === 'queued' && onRemove && (
             <button onClick={onRemove} className="rounded p-1 hover:bg-gray-100" title="Remove">
               <X size={14} />
             </button>
           )}
-          {job.status === 'downloading' && (
+          {job.status === 'downloading' && onCancel && (
             <button onClick={onCancel} className="rounded p-1 hover:bg-gray-100" title="Cancel">
               <X size={14} />
             </button>
           )}
-          {(job.status === 'failed' || job.status === 'cancelled') && (
+          {(job.status === 'failed' || job.status === 'cancelled') && onRetry && (
             <button onClick={onRetry} className="rounded p-1 hover:bg-gray-100" title="Retry">
               <RotateCcw size={14} />
             </button>
@@ -188,7 +328,7 @@ function StatusBadge({ status }: { status: JobDTO['status'] }) {
   );
 }
 
-function DownloadsPanel() {
+function LibraryPanel() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -221,7 +361,7 @@ function DownloadsPanel() {
               setSearch(e.target.value);
               setPage(0);
             }}
-            placeholder="Search downloads…"
+            placeholder="Search library…"
             className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm"
           />
         </div>
@@ -286,6 +426,13 @@ function DownloadsPanel() {
                 </td>
               </tr>
             ))}
+            {(q.data?.items ?? []).length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-sm text-gray-400">
+                  No downloads in library yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -361,6 +508,13 @@ function FetchesPanel() {
               </td>
             </tr>
           ))}
+          {(q.data?.items ?? []).length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-3 py-8 text-center text-sm text-gray-400">
+                No fetches yet.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

@@ -73,3 +73,10 @@ def cancel_all():
     q = get_queue()
     n = q.cancel_all()
     return {"cancelled": n}
+
+
+@router.post("/jobs/clear-finished")
+def clear_finished():
+    q = get_queue()
+    n = q.clear_finished()
+    return {"cleared": n}
