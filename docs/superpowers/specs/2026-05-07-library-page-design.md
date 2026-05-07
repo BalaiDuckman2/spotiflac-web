@@ -16,7 +16,7 @@ The user wants to see, at a glance, which albums in their `/music` library are m
 - Auto-verifying every album against Spotify at boot (would hammer Spotify).
 - Bulk "Complete all incomplete" action.
 - Tracking incomplete playlists (playlists mutate on Spotify; semantics are different).
-- Spotify name-based search for albums without history match (v1 requires the user to paste the URL once via the `Link` action — see API section).
+- (delivered separately by the Spotify Search feature, used by `/verify`)
 - Cross-album duplicate detection (separate feature on the original idea list).
 
 ## Architecture
@@ -121,12 +121,16 @@ Response:
 Body: `{album_artist, album, disc_number?}`.
 
 Logic:
-- If `spotify_album_id` known: `SpotifyMetadataClient.get_album_tracks(id)` → updates `spotify_total`, `last_verified_at`, builds the missing list by diffing track numbers.
-- Else: returns 409 with `{error: "no_spotify_id", hint: "use POST /albums/link first"}`. The SpotiFLAC client does not expose a name-based search and we do not want to add an OAuth dependency for v1.
+- If `spotify_album_id` known (from history cross-ref or a previous verify): `SpotifyMetadataClient.get_album_tracks(id)` → updates `spotify_total`, `last_verified_at`, builds the missing list by diffing track numbers.
+- Else: call `spotify_search.search(f"{album_artist} {album}", types=["album"], limit=5)`.
+  - If top result has similarity > 0.8 (Jaro-Winkler on normalized "artist album" vs result's "artist title"): silently use it. Save `spotify_album_id` on the AlbumInfo. Continue with the get_album_tracks path.
+  - If 0.5–0.8: respond 200 with `{verified: false, candidates: [...top 5 album DTOs...]}`. Frontend opens a picker modal; user choice triggers a follow-up call with `spotify_album_id` in the body to lock the choice.
+  - If < 0.5 or empty results: respond 404 `{error: "not_found"}`.
 
 Response (success):
 ```json
 {
+  "verified": true,
   "spotify_album_id": "4m2880jivSbbyEGAKfITCa",
   "spotify_total": 13,
   "missing": [
@@ -136,11 +140,18 @@ Response (success):
 }
 ```
 
-### `POST /api/library/albums/link`
+Response (ambiguous):
+```json
+{
+  "verified": false,
+  "candidates": [
+    {"id": "abc", "title": "Discovery", "artists": "Daft Punk", "year": "2001", "total_tracks": 14, "cover_url": "...", "url": "..."},
+    ...
+  ]
+}
+```
 
-Body: `{album_artist, album, disc_number?, spotify_url}`.
-
-Logic: parses the URL, validates it's an album, calls `SpotifyMetadataClient.get_album_tracks(id)` to confirm, stores `spotify_album_id` on the AlbumInfo. Used for albums without a history match (external imports). Same response shape as verify.
+Optional body field `spotify_album_id`: when present, skip the search and use this ID directly (called by the frontend after the user picks from the candidates).
 
 ### `POST /api/library/albums/complete`
 
@@ -188,7 +199,7 @@ No polling. Manual refresh on action.
 - **Various Artists compilations**: grouped by `ALBUMARTIST`, so a single compilation collapses to one album even though `ARTIST` differs per track.
 - **Albums with no tracks numbered**: `track_numbers` is empty set. Status defaults to `unknown`, hidden by default. Verify still possible (will populate via Spotify).
 - **TRACKTOTAL absent and not verified**: `unknown` status. Hidden until user toggles filter.
-- **External imports without history match**: no `spotify_album_id` known. Verify returns 409. The UI shows a "Link Spotify URL" button on the album row that opens an inline input; user pastes the album URL, backend calls `/link`. Once linked, Verify and Complete work normally.
+- **External imports without history match**: no `spotify_album_id` known. Verify runs a Spotify name-search; if the top match has similarity > 0.8, it's used silently (covers most cases). Ambiguous results surface a candidates picker; truly unknown albums return 404 and stay `unknown`.
 - **Stale cache**: `last_verified_at` older than 24h → re-verify on next Complete call.
 - **Cold start**: index lost; rebuilt during `init_library()`. History cross-ref re-runs.
 - **External imports without Spotify trace**: handled by `verify` (fuzzy search). May fail for obscure releases; status remains `unknown` and Complete returns an error.
@@ -235,7 +246,7 @@ No polling. Manual refresh on action.
 2. Backend: history_db cross-ref helper, hook into `_Index.build`.
 3. Backend: `GET /api/library/albums` endpoint + DTO + filter/pagination.
 4. Backend: cover proxy endpoint with path validation.
-5. Backend: `POST /verify` and `POST /link` with mocked Spotify in tests.
+5. Backend: `POST /verify` (uses spotify_search + Jaro-Winkler) with mocked Spotify in tests.
 6. Backend: `POST /complete` reusing the `/api/download` enqueue path.
 7. Frontend: API client additions.
 8. Frontend: Library page (top bar, table, expand row, actions).
