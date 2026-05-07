@@ -18,6 +18,7 @@ from .api import (
     logs as api_logs,
     modules as api_modules,
     preview as api_preview,
+    search as api_search,
     settings as api_settings,
     status as api_status,
     watched as api_watched,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(api_logs.router, prefix="/api")
     app.include_router(api_status.router, prefix="/api")
     app.include_router(api_modules.router, prefix="/api")
+    app.include_router(api_search.router, prefix="/api")
     app.include_router(api_watched.router, prefix="/api")
 
     @app.get("/api/health")

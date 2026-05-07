@@ -7,6 +7,7 @@ import App from './App';
 import Home from './pages/Home';
 import Fetch from './pages/Fetch';
 import Downloads from './pages/Downloads';
+import Artist from './pages/Artist';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import Modules from './pages/Modules';
@@ -33,6 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route index element={<Home />} />
             <Route path="fetch" element={<Fetch />} />
             <Route path="downloads" element={<Downloads />} />
+            <Route path="artist/:id" element={<Artist />} />
             <Route path="watched" element={<Watched />} />
             <Route path="settings" element={<Settings />} />
             <Route path="logs" element={<Logs />} />

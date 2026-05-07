@@ -52,6 +52,57 @@ export type JobDTO = {
   position: number;
 };
 
+export type SearchTrackDTO = {
+  id: string;
+  title: string;
+  artists: string;
+  album: string;
+  cover_url: string;
+  duration_ms: number;
+  url: string;
+};
+
+export type SearchAlbumDTO = {
+  id: string;
+  title: string;
+  artists: string;
+  cover_url: string;
+  year: string;
+  total_tracks: number;
+  url: string;
+  album_group?: 'album' | 'single';
+};
+
+export type SearchPlaylistDTO = {
+  id: string;
+  name: string;
+  owner: string;
+  cover_url: string;
+  total_tracks: number;
+  url: string;
+};
+
+export type SearchArtistDTO = {
+  id: string;
+  name: string;
+  cover_url: string;
+  url: string;
+};
+
+export type SearchResultDTO = {
+  tracks: SearchTrackDTO[];
+  albums: SearchAlbumDTO[];
+  playlists: SearchPlaylistDTO[];
+  artists: SearchArtistDTO[];
+};
+
+export type ArtistAlbumsDTO = {
+  id: string;
+  name: string;
+  cover_url: string;
+  items: SearchAlbumDTO[];
+};
+
 export type SettingsDTO = {
   general: {
     providers: string[];
@@ -114,6 +165,14 @@ export const api = {
     request<{ cleared: number }>('/api/jobs/clear-finished', { method: 'POST' }),
 
   rescan: () => request<{ indexed_keys: number }>('/api/library/rescan', { method: 'POST' }),
+
+  search: (q: string, types: string[] = ['track', 'album', 'playlist', 'artist'], limit = 20) =>
+    request<SearchResultDTO>(
+      `/api/search?q=${encodeURIComponent(q)}&types=${types.join(',')}&limit=${limit}`,
+    ),
+
+  artistAlbums: (artistId: string, limit = 50) =>
+    request<ArtistAlbumsDTO>(`/api/spotify/artist/${artistId}/albums?limit=${limit}`),
 
   history: {
     downloads: (params: {
