@@ -166,4 +166,32 @@ export const api = {
 
   modules: () =>
     request<{ modules: { name: string; version: string | null; ok: boolean }[] }>('/api/modules'),
+
+  watched: {
+    list: () => request<{ items: WatchedPlaylistDTO[] }>('/api/watched'),
+    add: (url: string) =>
+      request<WatchedPlaylistDTO>('/api/watched', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      }),
+    remove: (id: number) =>
+      request<{ removed: boolean }>(`/api/watched/${id}`, { method: 'DELETE' }),
+    syncNow: (id: number) =>
+      request<{ ok: boolean; new_job_ids?: string[]; total_tracks?: number; error?: string }>(
+        `/api/watched/${id}/sync`,
+        { method: 'POST' },
+      ),
+  },
+};
+
+export type WatchedPlaylistDTO = {
+  id: number;
+  spotify_playlist_id: string;
+  url: string;
+  name: string;
+  cover_url: string;
+  added_at: string;
+  last_synced_at: string | null;
+  last_error: string | null;
+  is_active: number;
 };

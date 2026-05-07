@@ -214,3 +214,15 @@ def clear_all_downloads() -> int:
         cur = conn.execute("DELETE FROM downloads")
         conn.commit()
         return cur.rowcount
+
+
+def existing_track_ids(track_ids: list[str]) -> set[str]:
+    if not track_ids:
+        return set()
+    conn = get_conn()
+    placeholders = ",".join("?" * len(track_ids))
+    rows = conn.execute(
+        f"SELECT DISTINCT spotify_track_id FROM downloads WHERE spotify_track_id IN ({placeholders})",
+        track_ids,
+    ).fetchall()
+    return {r["spotify_track_id"] for r in rows}

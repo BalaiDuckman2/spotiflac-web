@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Home, History as HistoryIcon, Settings as SettingsIcon, Terminal, Boxes, Github, Info, Coffee } from 'lucide-react';
+import { Home, History as HistoryIcon, Eye, Settings as SettingsIcon, Terminal, Boxes, Github, Info, Coffee } from 'lucide-react';
 
 import { cn } from '@/lib/cn';
 
 const items = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/history', icon: HistoryIcon, label: 'History' },
+  { to: '/watched', icon: Eye, label: 'Watched' },
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
   { to: '/logs', icon: Terminal, label: 'Logs' },
   { to: '/modules', icon: Boxes, label: 'Modules' },

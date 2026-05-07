@@ -20,10 +20,13 @@ from .api import (
     preview as api_preview,
     settings as api_settings,
     status as api_status,
+    watched as api_watched,
 )
 from .core.library import init_library
 from .core.logs import emit_log, get_bus, install_log_bridge
+from .core.playlist_watcher import start_watcher, stop_watcher
 from .core.queue import get_queue
+from .core.watched_db import init_watched_db
 from .core.worker import start_worker, stop_worker
 
 logger = logging.getLogger(__name__)
@@ -41,11 +44,14 @@ async def lifespan(app: FastAPI):
     # would be empty on cold start). Kept as a hook in case persistence is
     # added later.
     init_library()
+    init_watched_db()
     start_worker()
-    emit_log("info", "worker started, library indexed")
+    start_watcher()
+    emit_log("info", "worker started, library indexed, playlist watcher started")
 
     yield
 
+    stop_watcher()
     stop_worker()
     emit_log("info", "spotiflac-web stopping")
 
@@ -63,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(api_logs.router, prefix="/api")
     app.include_router(api_status.router, prefix="/api")
     app.include_router(api_modules.router, prefix="/api")
+    app.include_router(api_watched.router, prefix="/api")
 
     @app.get("/api/health")
     def health():

@@ -10,6 +10,7 @@ import History from './pages/History';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import Modules from './pages/Modules';
+import Watched from './pages/Watched';
 
 import './index.css';
 
@@ -32,6 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route index element={<Home />} />
             <Route path="fetch" element={<Fetch />} />
             <Route path="history" element={<History />} />
+            <Route path="watched" element={<Watched />} />
             <Route path="settings" element={<Settings />} />
             <Route path="logs" element={<Logs />} />
             <Route path="modules" element={<Modules />} />
