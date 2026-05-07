@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
+from app.core.settings import GeneralSettings
 
 
 @pytest.fixture
@@ -52,12 +55,6 @@ def test_seed_from_env(tmp_path, monkeypatch):
     assert s.general.providers == ["qobuz", "tidal"]
 
 
-import pytest
-from pydantic import ValidationError
-
-from app.core.settings import GeneralSettings, Settings
-
-
 def test_concurrency_defaults():
     g = GeneralSettings()
     assert g.concurrency_total == 4
@@ -73,6 +70,9 @@ def test_concurrency_bounds():
         GeneralSettings(concurrency_per_provider=0)
     with pytest.raises(ValidationError):
         GeneralSettings(concurrency_per_provider=9)
+    # Upper bounds should be accepted
+    GeneralSettings(concurrency_total=16)
+    GeneralSettings(concurrency_per_provider=8)
 
 
 def test_settings_loads_existing_json_without_concurrency_fields(tmp_path, monkeypatch):
