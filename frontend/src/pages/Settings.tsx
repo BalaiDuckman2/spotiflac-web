@@ -223,6 +223,40 @@ function GeneralTab({
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
           />
         </Field>
+
+        <div className="border-t border-gray-200 pt-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Performance
+          </div>
+          <Field label={`Parallel downloads (total): ${draft.general.concurrency_total}`}>
+            <input
+              type="range"
+              min={1}
+              max={16}
+              value={draft.general.concurrency_total}
+              onChange={(e) =>
+                update('general', { concurrency_total: parseInt(e.target.value, 10) })
+              }
+              className="w-full"
+            />
+          </Field>
+          <Field label={`Max per provider: ${draft.general.concurrency_per_provider}`}>
+            <input
+              type="range"
+              min={1}
+              max={8}
+              value={draft.general.concurrency_per_provider}
+              onChange={(e) =>
+                update('general', { concurrency_per_provider: parseInt(e.target.value, 10) })
+              }
+              className="w-full"
+            />
+          </Field>
+          <p className="text-xs text-gray-500">
+            Lower the per-provider cap if you see HTTP 429 errors. Changes apply
+            immediately.
+          </p>
+        </div>
       </div>
     </div>
   );
