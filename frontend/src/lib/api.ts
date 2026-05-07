@@ -52,6 +52,32 @@ export type JobDTO = {
   position: number;
 };
 
+export type LibraryAlbumDTO = {
+  album_artist: string;
+  album: string;
+  disc_number: number;
+  cover_url: string | null;
+  tracks_present: number;
+  tracks_expected: number | null;
+  status: 'complete' | 'incomplete' | 'unknown';
+  spotify_album_id: string | null;
+  verified: boolean;
+  missing_track_numbers: number[];
+  paths_count: number;
+};
+
+export type VerifyResponseDTO =
+  | {
+      verified: true;
+      spotify_album_id: string;
+      spotify_total: number;
+      missing: { number: number; title: string; spotify_track_id: string }[];
+    }
+  | {
+      verified: false;
+      candidates: SearchAlbumDTO[];
+    };
+
 export type SearchTrackDTO = {
   id: string;
   title: string;
@@ -165,6 +191,35 @@ export const api = {
     request<{ cleared: number }>('/api/jobs/clear-finished', { method: 'POST' }),
 
   rescan: () => request<{ indexed_keys: number }>('/api/library/rescan', { method: 'POST' }),
+
+  library: {
+    albums: (params: { status?: string; search?: string; limit?: number; offset?: number } = {}) => {
+      const qs = new URLSearchParams(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== '')
+          .map(([k, v]) => [k, String(v)]),
+      ).toString();
+      return request<{ items: LibraryAlbumDTO[]; total: number; limit: number; offset: number }>(
+        `/api/library/albums${qs ? `?${qs}` : ''}`,
+      );
+    },
+    verify: (body: {
+      album_artist: string;
+      album: string;
+      disc_number?: number;
+      spotify_album_id?: string;
+    }) =>
+      request<VerifyResponseDTO>('/api/library/albums/verify', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    complete: (body: { album_artist: string; album: string; disc_number?: number }) =>
+      request<{ missing_count: number; job_ids: string[]; skipped?: number }>(
+        '/api/library/albums/complete',
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+    coverUrl: (path: string) => `/api/library/cover?path=${encodeURIComponent(path)}`,
+  },
 
   search: (q: string, types: string[] = ['track', 'album', 'playlist', 'artist'], limit = 20) =>
     request<SearchResultDTO>(

@@ -216,6 +216,41 @@ def clear_all_downloads() -> int:
         return cur.rowcount
 
 
+def albums_with_spotify_id() -> dict[tuple[str, str], str]:
+    """Return {(normalized_album_artist, normalized_album): spotify_album_id}.
+
+    Reads the per-track download history and extracts the album id from the
+    `collection_url` of rows where the collection was a Spotify album.
+    Used by the library index at build time to fill `spotify_album_id`
+    on AlbumInfo entries.
+    """
+    import re
+    from .library import _norm   # local import to avoid cycle at module load
+
+    conn = get_conn()
+    rows = conn.execute(
+        """
+        SELECT album, artists, collection_url
+          FROM downloads
+         WHERE collection_url LIKE '%open.spotify.com/album/%'
+        """
+    ).fetchall()
+
+    out: dict[tuple[str, str], str] = {}
+    pat = re.compile(r"open\.spotify\.com/album/([A-Za-z0-9]+)")
+    for r in rows:
+        m = pat.search(r["collection_url"] or "")
+        if not m:
+            continue
+        spid = m.group(1)
+        # `artists` in this row is the track-level ARTIST (often == album_artist
+        # for a regular album, but may differ for compilations). Best-effort.
+        key = (_norm(r["artists"] or ""), _norm(r["album"] or ""))
+        if key != ("", ""):
+            out.setdefault(key, spid)
+    return out
+
+
 def existing_track_ids(track_ids: list[str]) -> set[str]:
     if not track_ids:
         return set()

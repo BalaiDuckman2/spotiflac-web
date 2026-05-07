@@ -13,17 +13,10 @@ from urllib.parse import urlencode
 
 from SpotiFLAC.providers.spotify_metadata import SpotifyMetadataClient
 
+from .metadata import get_client as _get_client   # share the singleton/token
+
 _VALID_TYPES = {"track", "album", "playlist", "artist"}
 _DEFAULT_MARKET = "FR"
-
-_client: SpotifyMetadataClient | None = None
-
-
-def _get_client() -> SpotifyMetadataClient:
-    global _client
-    if _client is None:
-        _client = SpotifyMetadataClient(timeout_s=15)
-    return _client
 
 
 class SearchResult(TypedDict):

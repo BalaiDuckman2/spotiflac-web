@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Download, Eye, Settings as SettingsIcon, Terminal, Boxes, Github, Info, Coffee } from 'lucide-react';
+import { Home, Download, Disc3, Eye, Settings as SettingsIcon, Terminal, Boxes, Github, Info, Coffee } from 'lucide-react';
 
 import { cn } from '@/lib/cn';
 
 const items = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/downloads', icon: Download, label: 'Downloads' },
+  { to: '/library', icon: Disc3, label: 'Library' },
   { to: '/watched', icon: Eye, label: 'Watched' },
   { to: '/settings', icon: SettingsIcon, label: 'Settings' },
   { to: '/logs', icon: Terminal, label: 'Logs' },
