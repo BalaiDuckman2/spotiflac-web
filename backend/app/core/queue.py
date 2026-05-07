@@ -34,6 +34,9 @@ class Job:
     finished_at: Optional[datetime] = None
     files_created: list[str] = field(default_factory=list)
     cancel_requested: bool = False
+    # Runtime-only (not in DTO). Set by worker; used by cancel().
+    _cancel_event: Any = field(default=None, repr=False, compare=False)
+    _proc: Any = field(default=None, repr=False, compare=False)
 
     def to_dto(self) -> dict[str, Any]:
         return {
@@ -104,6 +107,18 @@ class JobQueue:
                 self._history.append(job_id)
             elif job.status == "downloading":
                 job.cancel_requested = True
+                ev = job._cancel_event
+                if ev is not None:
+                    try:
+                        ev.set()
+                    except Exception:
+                        pass
+                proc = job._proc
+                if proc is not None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
             return job
 
     def cancel_all(self) -> int:
@@ -116,6 +131,19 @@ class JobQueue:
                         job.status = "cancelled"
                         job.finished_at = datetime.utcnow()
                         self._history.append(job.id)
+                    else:
+                        ev = job._cancel_event
+                        if ev is not None:
+                            try:
+                                ev.set()
+                            except Exception:
+                                pass
+                        proc = job._proc
+                        if proc is not None:
+                            try:
+                                proc.terminate()
+                            except Exception:
+                                pass
                     n += 1
         return n
 
