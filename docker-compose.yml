@@ -15,3 +15,8 @@ services:
       LOG_LEVEL: INFO
       # Optional: seed providers at first launch (overridable from Settings UI later)
       # SPOTIFLAC_INITIAL_PROVIDERS: tidal,qobuz,amazon
+      # Optional: comma-separated custom Tidal HiFi API URLs (tried first,
+      # before the dead public list). The Python module does not have the
+      # "customTidalApi" UI setting from spotbye/SpotiFLAC v7.1.6 yet, so
+      # this is the fallback.
+      # SPOTIFLAC_CUSTOM_TIDAL_API: https://your.working.tidal.api

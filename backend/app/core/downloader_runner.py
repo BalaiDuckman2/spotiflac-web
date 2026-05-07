@@ -30,7 +30,9 @@ import json
 import logging
 import os
 import sys
+import time
 import traceback
+from pathlib import Path
 
 
 def _emit(event: dict) -> None:
@@ -46,8 +48,50 @@ def _setup_logging() -> None:
     )
 
 
+def _seed_tidal_api_cache() -> None:
+    # SPOTIFLAC-Module-Version (Python) lags behind spotbye/SpotiFLAC v7.1.6
+    # which added a "customTidalApi" user setting. The public gist that
+    # populates the Tidal API list returns null today, so we forward
+    # SPOTIFLAC_CUSTOM_TIDAL_API (comma-separated URLs) into the on-disk
+    # cache file the module reads at startup, before any of its imports.
+    custom = os.environ.get("SPOTIFLAC_CUSTOM_TIDAL_API", "").strip()
+    if not custom:
+        return
+    urls = [u.strip().rstrip("/") for u in custom.split(",") if u.strip()]
+    if not urls:
+        return
+    cache_dir = Path.home() / ".cache" / "spotiflac"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "tidal-api-urls.json"
+    existing: list[str] = []
+    if cache_path.exists():
+        try:
+            existing = json.loads(cache_path.read_text(encoding="utf-8")).get("urls", [])
+        except Exception:
+            existing = []
+    seen: set[str] = set()
+    merged: list[str] = []
+    for u in urls + existing:
+        if u and u not in seen:
+            seen.add(u)
+            merged.append(u)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "urls": merged,
+                "last_used_url": "",
+                "updated_at": int(time.time()),
+                "source": "user-custom+cache",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     _setup_logging()
+    _seed_tidal_api_cache()
     raw = sys.stdin.read()
     try:
         payload = json.loads(raw)
