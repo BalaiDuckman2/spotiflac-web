@@ -9,6 +9,7 @@ import {
   SearchTrackDTO,
 } from '@/lib/api';
 import { formatDuration } from '@/lib/format';
+import ArtistLink from '@/components/ArtistLink';
 
 type Props = {
   data: SearchResultDTO | undefined;
@@ -149,7 +150,12 @@ function AlbumRow({ item }: { item: SearchAlbumDTO }) {
     <Row
       cover={item.cover_url}
       primary={item.title}
-      secondary={`${item.artists}${item.year ? ` · ${item.year}` : ''}`}
+      secondary={
+        <span>
+          <ArtistLink artistId={item.artist_id} name={item.artists} className="text-gray-500" />
+          {item.year ? ` · ${item.year}` : ''}
+        </span>
+      }
       tertiary={`${item.total_tracks} tracks`}
       onClick={() => navigate(`/album?url=${encodeURIComponent(item.url)}`)}
     />
@@ -174,7 +180,12 @@ function TrackRow({ item }: { item: SearchTrackDTO }) {
     <Row
       cover={item.cover_url}
       primary={item.title}
-      secondary={`${item.artists} · ${item.album}`}
+      secondary={
+        <span>
+          <ArtistLink artistId={item.artist_id} name={item.artists} className="text-gray-500" />
+          {item.album ? ` · ${item.album}` : ''}
+        </span>
+      }
       tertiary={formatDuration(item.duration_ms)}
       onClick={() => navigate(`/fetch?url=${encodeURIComponent(item.url)}`)}
     />

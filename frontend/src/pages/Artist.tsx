@@ -64,7 +64,7 @@ function Section({ title, items }: { title: string; items: SearchAlbumDTO[] }) {
         {items.map((a) => (
           <button
             key={a.id}
-            onClick={() => navigate(`/fetch?url=${encodeURIComponent(a.url)}`)}
+            onClick={() => navigate(`/album?url=${encodeURIComponent(a.url)}`)}
             className="group overflow-hidden rounded-lg border border-gray-200 bg-white p-2 text-left transition hover:shadow-md"
           >
             <div className="aspect-square overflow-hidden rounded-md bg-gray-100">

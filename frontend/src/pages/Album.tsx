@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle, ArrowLeft, Check, Disc3, Download, MoreHorizontal, RefreshCw,
-  RotateCcw, Trash2, X,
+  ArrowLeft, Check, Disc3, Download, MoreHorizontal, RefreshCw,
+  RotateCcw, Trash2,
 } from 'lucide-react';
 
 import { api, AlbumTrackDTO, SearchAlbumDTO, VerifyResponseDTO } from '@/lib/api';
@@ -11,6 +11,8 @@ import { cn } from '@/lib/cn';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 import CandidatesPicker from '@/components/CandidatesPicker';
 import { formatDuration } from '@/lib/format';
+import { useToast } from '@/components/Toaster';
+import ArtistLink from '@/components/ArtistLink';
 
 const PAGE_SIZE = 50;
 
@@ -38,6 +40,7 @@ export default function Album() {
   const [params] = useSearchParams();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const url = params.get('url');
   const spotifyIdParam = params.get('spotify_id');
@@ -70,8 +73,6 @@ export default function Album() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState<ConfirmMode | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<SearchAlbumDTO[] | null>(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -104,33 +105,35 @@ export default function Album() {
   const downloadMut = useMutation({
     mutationFn: (ids: string[]) => api.download(data!.spotify_url, ids),
     onSuccess: (res, requestedIds) => {
-      setError(null);
       setSelected(new Set());
       const queued = res.job_ids.length;
       const skipped = res.skipped_existing;
-      setSuccessMsg(
+      const msg =
         queued > 0
-          ? `${queued} piste${queued > 1 ? 's' : ''} en file de téléchargement (sur ${requestedIds.length})${skipped > 0 ? ` · ${skipped} déjà sur disque` : ''}.`
-          : `Aucune piste en file (${skipped} déjà sur disque).`,
-      );
+          ? `${queued} piste${queued > 1 ? 's' : ''} en file (sur ${requestedIds.length})${skipped > 0 ? ` · ${skipped} déjà sur disque` : ''}.`
+          : `Aucune piste en file (${skipped} déjà sur disque).`;
+      if (queued > 0) {
+        toast.success(msg, { action: { label: 'Voir Downloads', to: '/downloads' } });
+      } else {
+        toast.info(msg);
+      }
       invalidateAll();
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (paths: string[]) => api.library.deleteTracks(paths),
     onSuccess: (res) => {
-      setError(null);
       setSelected(new Set());
       setConfirm(null);
-      setSuccessMsg(
+      toast.success(
         `${res.deleted} fichier${res.deleted > 1 ? 's' : ''} supprimé${res.deleted > 1 ? 's' : ''} · ${formatBytes(res.freed_bytes)} libéré${res.freed_bytes > 1 ? 's' : ''}.`,
       );
       invalidateAll();
     },
     onError: (e: Error) => {
-      setError(e.message);
+      toast.error(e.message);
       setConfirm(null);
     },
   });
@@ -138,13 +141,14 @@ export default function Album() {
   const redownloadTrackMut = useMutation({
     mutationFn: (path: string) => api.library.redownloadTrack(path),
     onSuccess: () => {
-      setError(null);
       setConfirm(null);
-      setSuccessMsg('Piste remise en file de téléchargement.');
+      toast.success('Piste remise en file de téléchargement.', {
+        action: { label: 'Voir Downloads', to: '/downloads' },
+      });
       invalidateAll();
     },
     onError: (e: Error) => {
-      setError(e.message);
+      toast.error(e.message);
       setConfirm(null);
     },
   });
@@ -153,15 +157,15 @@ export default function Album() {
     mutationFn: () =>
       api.library.redownloadAlbum(writeAlbumArtist, writeAlbum, writeDisc),
     onSuccess: (res) => {
-      setError(null);
       setConfirm(null);
-      setSuccessMsg(
+      toast.success(
         `Album supprimé (${res.deleted_files} fichier${res.deleted_files > 1 ? 's' : ''}) et ${res.job_ids.length} piste${res.job_ids.length > 1 ? 's' : ''} mise${res.job_ids.length > 1 ? 's' : ''} en file.`,
+        { action: { label: 'Voir Downloads', to: '/downloads' } },
       );
       invalidateAll();
     },
     onError: (e: Error) => {
-      setError(e.message);
+      toast.error(e.message);
       setConfirm(null);
     },
   });
@@ -175,16 +179,15 @@ export default function Album() {
         spotify_album_id,
       }),
     onSuccess: (res: VerifyResponseDTO) => {
-      setError(null);
       if (res.verified) {
         setCandidates(null);
-        setSuccessMsg('Album vérifié contre Spotify.');
+        toast.success('Album vérifié contre Spotify.');
         invalidateAll();
       } else {
         setCandidates(res.candidates);
       }
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   // ------- Filter / paginate tracks -------
@@ -261,9 +264,12 @@ export default function Album() {
     return (
       <div className="mx-auto max-w-5xl px-8 pt-8">
         <p className="text-sm text-gray-500">Album non spécifié.</p>
-        <Link to="/library" className="text-sm text-blue-600 hover:underline">
-          ← Retour à la Library
-        </Link>
+        <button
+          onClick={() => navigate(-1)}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          ← Retour
+        </button>
       </div>
     );
   }
@@ -281,12 +287,12 @@ export default function Album() {
   ) {
     return (
       <div className="mx-auto max-w-5xl px-8 pb-16 pt-8">
-        <Link
-          to="/library"
+        <button
+          onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
-          <ArrowLeft size={14} /> Retour à la Library
-        </Link>
+          <ArrowLeft size={14} /> Retour
+        </button>
         <div className="mt-6 flex items-end gap-6">
           <div className="h-48 w-48 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100 shadow-lg">
             {libraryQ.data.cover_url ? (
@@ -337,12 +343,6 @@ export default function Album() {
             />
           </div>
         )}
-
-        {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
       </div>
     );
   }
@@ -353,11 +353,14 @@ export default function Album() {
   if (albumQ.isError) {
     return (
       <div className="mx-auto max-w-5xl px-8 pt-8">
-        <Link to="/library" className="text-sm text-gray-500 hover:underline">
+        <button
+          onClick={() => navigate(-1)}
+          className="text-sm text-gray-500 hover:underline"
+        >
           ← Retour
-        </Link>
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertCircle size={14} /> {(albumQ.error as Error).message}
+        </button>
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {(albumQ.error as Error).message}
         </div>
       </div>
     );
@@ -427,12 +430,12 @@ export default function Album() {
 
   return (
     <div className="mx-auto max-w-5xl px-8 pb-24 pt-8">
-      <Link
-        to={cameFromLibrary ? '/library' : '/'}
+      <button
+        onClick={() => navigate(-1)}
         className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft size={14} /> Retour
-      </Link>
+      </button>
 
       <div className="mt-6 flex flex-col gap-6 md:flex-row md:items-end">
         <div className="h-48 w-48 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100 shadow-lg">
@@ -449,7 +452,13 @@ export default function Album() {
             Album {data.year && <span className="ml-1">· {data.year}</span>}
           </div>
           <h1 className="mt-1 text-3xl font-bold leading-tight">{data.album}</h1>
-          <div className="mt-1 text-base text-gray-700">{data.album_artist}</div>
+          <div className="mt-1 text-base text-gray-700">
+            <ArtistLink
+              artistId={data.artist_id}
+              name={data.album_artist}
+              className="font-medium"
+            />
+          </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <StatusPill
               onDisk={data.tracks_on_disk}
@@ -530,29 +539,6 @@ export default function Album() {
             }}
             onClose={() => setCandidates(null)}
           />
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          <Check size={14} /> {successMsg}
-          <button
-            onClick={() => setSuccessMsg(null)}
-            className="ml-auto rounded p-0.5 text-green-700 hover:bg-green-100"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      )}
-      {error && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertCircle size={14} /> {error}
-          <button
-            onClick={() => setError(null)}
-            className="ml-auto rounded p-0.5 text-red-700 hover:bg-red-100"
-          >
-            <X size={12} />
-          </button>
         </div>
       )}
 
@@ -764,7 +750,9 @@ function TrackRow({
       <td className="px-3 py-2">
         <div className="truncate font-medium">{t.title || '(sans titre)'}</div>
         {t.artists && (
-          <div className="truncate text-xs text-gray-500">{t.artists}</div>
+          <div className="truncate text-xs text-gray-500">
+            <ArtistLink artistId={t.artist_id} name={t.artists} />
+          </div>
         )}
       </td>
       <td className="px-3 py-2 text-xs tabular-nums text-gray-600">

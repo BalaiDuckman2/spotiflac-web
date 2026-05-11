@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ArrowUp, X } from 'lucide-react';
+import { Download, ArrowUp } from 'lucide-react';
 
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDuration } from '@/lib/format';
+import { useToast } from '@/components/Toaster';
+import ArtistLink from '@/components/ArtistLink';
 
 const PAGE_SIZE = 50;
 
 export default function FetchPage() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const url = params.get('url') ?? '';
   const qc = useQueryClient();
+  const toast = useToast();
 
   const previewQ = useQuery({
     queryKey: ['preview', url],
@@ -66,11 +68,6 @@ export default function FetchPage() {
     );
   }, [preview, alreadyPresent]);
 
-  const [feedback, setFeedback] = useState<{
-    type: 'ok' | 'warn' | 'error';
-    text: string;
-  } | null>(null);
-
   const downloadMut = useMutation({
     mutationFn: (ids: string[]) => api.download(url, ids),
     onSuccess: (data, requestedIds) => {
@@ -81,33 +78,22 @@ export default function FetchPage() {
       const errored = data.errored ?? 0;
       if (queued === 0) {
         const parts: string[] = [];
-        if (skipped > 0) parts.push(`${skipped} already on disk (skipped)`);
-        if (errored > 0) parts.push(`${errored} errored (see server logs)`);
-        if (unmatched > 0)
-          parts.push(
-            `${unmatched} not found in the playlist preview (only ${data.preview_tracks} tracks were returned)`,
-          );
-        setFeedback({
-          type: 'warn',
-          text: `Nothing queued. ${parts.join(' · ') || 'Reason unknown.'}`,
-        });
+        if (skipped > 0) parts.push(`${skipped} already on disk`);
+        if (errored > 0) parts.push(`${errored} errored`);
+        if (unmatched > 0) parts.push(`${unmatched} missing from preview`);
+        toast.info(`Nothing queued. ${parts.join(' · ') || 'Reason unknown.'}`);
         return;
       }
       const extras: string[] = [];
-      if (skipped > 0) extras.push(`${skipped} skipped (already on disk)`);
+      if (skipped > 0) extras.push(`${skipped} skipped`);
       if (errored > 0) extras.push(`${errored} errored`);
-      if (unmatched > 0) extras.push(`${unmatched} missing from preview`);
-      setFeedback({
-        type: extras.length > 0 ? 'warn' : 'ok',
-        text:
-          `Queued ${queued} of ${requestedIds.length}` +
-          (extras.length > 0 ? ` · ${extras.join(' · ')}` : ''),
-      });
-      navigate('/downloads');
+      if (unmatched > 0) extras.push(`${unmatched} missing`);
+      const msg =
+        `Queued ${queued} of ${requestedIds.length}` +
+        (extras.length > 0 ? ` · ${extras.join(' · ')}` : '');
+      toast.success(msg, { action: { label: 'Voir Downloads', to: '/downloads' } });
     },
-    onError: (err: Error) => {
-      setFeedback({ type: 'error', text: err.message });
-    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const filteredTracks = useMemo(() => {
@@ -169,26 +155,6 @@ export default function FetchPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-8 pb-24 pt-8">
-      {feedback && (
-        <div
-          className={cn(
-            'mb-4 rounded-lg border px-4 py-3 text-sm',
-            feedback.type === 'ok' && 'border-green-200 bg-green-50 text-green-800',
-            feedback.type === 'warn' && 'border-yellow-200 bg-yellow-50 text-yellow-900',
-            feedback.type === 'error' && 'border-red-200 bg-red-50 text-red-700',
-          )}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <span>{feedback.text}</span>
-            <button
-              onClick={() => setFeedback(null)}
-              className="text-xs opacity-60 hover:opacity-100"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
       <header className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex gap-5">
           <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100">
@@ -291,7 +257,9 @@ export default function FetchPage() {
                   <td className="px-3 py-2 text-gray-500">{t.position}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{t.title}</div>
-                    <div className="text-xs text-gray-500">{t.artists}</div>
+                    <div className="text-xs text-gray-500">
+                      <ArtistLink artistId={(t as any).artist_id ?? null} name={t.artists} />
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600">{t.album}</td>
                   <td className="px-3 py-2 text-gray-600">{formatDuration(t.duration_ms)}</td>

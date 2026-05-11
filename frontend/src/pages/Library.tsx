@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AlertCircle, Check, Disc3, MoreHorizontal, RefreshCw, Search, Trash2,
+  Check, Disc3, MoreHorizontal, RefreshCw, Search, Trash2,
 } from 'lucide-react';
 
 import { api, LibraryAlbumDTO } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
+import { useToast } from '@/components/Toaster';
 
 type StatusFilter = 'incomplete' | 'all' | 'complete' | 'unknown';
 
@@ -123,8 +124,8 @@ export default function Library() {
 function AlbumCard({ album }: { album: LibraryAlbumDTO }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const toast = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<
     | { kind: 'album'; paths: string[] }
     | { kind: 'artist'; paths: string[]; albumCount: number }
@@ -159,7 +160,7 @@ function AlbumCard({ album }: { album: LibraryAlbumDTO }) {
       setMenuOpen(false);
       setConfirm({ kind: 'album', paths: data.tracks.map((t) => t.path) });
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const openDeleteArtist = useMutation({
@@ -168,18 +169,18 @@ function AlbumCard({ album }: { album: LibraryAlbumDTO }) {
       setMenuOpen(false);
       setConfirm({ kind: 'artist', paths: data.paths, albumCount: data.album_count });
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (paths: string[]) => api.library.deleteTracks(paths),
-    onSuccess: () => {
+    onSuccess: (res) => {
       setConfirm(null);
-      setError(null);
+      toast.success(`${res.deleted} fichier${res.deleted > 1 ? 's' : ''} supprimé${res.deleted > 1 ? 's' : ''}.`);
       qc.invalidateQueries({ queryKey: ['library-albums'] });
     },
     onError: (e: Error) => {
-      setError(e.message);
+      toast.error(e.message);
       setConfirm(null);
     },
   });
@@ -271,12 +272,6 @@ function AlbumCard({ album }: { album: LibraryAlbumDTO }) {
           </div>
         )}
       </div>
-
-      {error && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] text-red-600">
-          <AlertCircle size={10} /> {error}
-        </div>
-      )}
 
       {confirm && confirm.kind === 'album' && (
         <ConfirmDeleteModal

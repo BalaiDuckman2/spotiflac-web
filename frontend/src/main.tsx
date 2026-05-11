@@ -10,6 +10,7 @@ import Downloads from './pages/Downloads';
 import Artist from './pages/Artist';
 import Library from './pages/Library';
 import Album from './pages/Album';
+import Search from './pages/Search';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
 import Modules from './pages/Modules';
@@ -34,6 +35,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route element={<App />}>
             <Route index element={<Home />} />
+            <Route path="search" element={<Search />} />
             <Route path="fetch" element={<Fetch />} />
             <Route path="downloads" element={<Downloads />} />
             <Route path="artist/:id" element={<Artist />} />

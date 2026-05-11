@@ -96,6 +96,7 @@ export type AlbumTrackDTO = {
   disc_number: number;
   title: string;
   artists: string;
+  artist_id: string | null;
   album: string;
   isrc: string;
   duration_ms: number;
@@ -108,6 +109,7 @@ export type AlbumDTO = {
   spotify_album_id: string;
   album: string;
   album_artist: string;
+  artist_id: string | null;
   cover_url: string;
   year: string;
   spotify_url: string;
@@ -132,6 +134,7 @@ export type SearchTrackDTO = {
   id: string;
   title: string;
   artists: string;
+  artist_id: string | null;
   album: string;
   cover_url: string;
   duration_ms: number;
@@ -142,6 +145,7 @@ export type SearchAlbumDTO = {
   id: string;
   title: string;
   artists: string;
+  artist_id: string | null;
   cover_url: string;
   year: string;
   total_tracks: number;

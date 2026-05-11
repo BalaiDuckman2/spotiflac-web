@@ -62,10 +62,12 @@ def _best_image(images: list[dict]) -> str:
 
 def _track_dto(t: dict) -> dict:
     album = t.get("album") or {}
+    artists = t.get("artists") or []
     return {
         "id":          t.get("id", ""),
         "title":       t.get("name", ""),
-        "artists":     ", ".join(a.get("name", "") for a in t.get("artists", [])),
+        "artists":     ", ".join(a.get("name", "") for a in artists),
+        "artist_id":   (artists[0].get("id", "") if artists else "") or None,
         "album":       album.get("name", ""),
         "cover_url":   _best_image(album.get("images", [])),
         "duration_ms": t.get("duration_ms", 0),
@@ -74,10 +76,12 @@ def _track_dto(t: dict) -> dict:
 
 
 def _album_dto(a: dict, include_group: bool = False) -> dict:
+    artists = a.get("artists") or []
     dto = {
         "id":           a.get("id", ""),
         "title":        a.get("name", ""),
-        "artists":      ", ".join(ar.get("name", "") for ar in a.get("artists", [])),
+        "artists":      ", ".join(ar.get("name", "") for ar in artists),
+        "artist_id":    (artists[0].get("id", "") if artists else "") or None,
         "cover_url":    _best_image(a.get("images", [])),
         "year":         (a.get("release_date") or "")[:4],
         "total_tracks": a.get("total_tracks", 0),

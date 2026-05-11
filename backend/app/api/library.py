@@ -551,6 +551,9 @@ def get_unified_album(
     except Exception as e:
         raise HTTPException(502, f"spotify lookup failed: {e}")
 
+    _raw_artists = album_raw.get("artists") or []
+    primary_artist_id = (_raw_artists[0].get("id") if _raw_artists else "") or None
+
     idx = get_index()
     enriched = []
     for t in tracks:
@@ -574,6 +577,7 @@ def get_unified_album(
             "disc_number":      t.disc_number,
             "title":            t.title,
             "artists":          t.artists,
+            "artist_id":        primary_artist_id,
             "album":            t.album,
             "isrc":             t.isrc,
             "duration_ms":      t.duration_ms,
@@ -583,13 +587,13 @@ def get_unified_album(
         })
 
     cover = (album_raw.get("images") or [{}])[0].get("url", "")
-    artists_str = ", ".join(
-        a.get("name", "") for a in album_raw.get("artists", [])
-    )
+    raw_artists = album_raw.get("artists") or []
+    artists_str = ", ".join(a.get("name", "") for a in raw_artists)
     return {
         "spotify_album_id": spotify_id,
         "album":            album_raw.get("name", ""),
         "album_artist":     artists_str,
+        "artist_id":        primary_artist_id,
         "cover_url":        cover,
         "year":             (album_raw.get("release_date") or "")[:4],
         "spotify_url":      f"https://open.spotify.com/album/{spotify_id}",
