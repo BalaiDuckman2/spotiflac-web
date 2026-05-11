@@ -10,6 +10,8 @@ from fastapi.responses import Response
 from mutagen.flac import FLAC
 from pydantic import BaseModel
 
+from SpotiFLAC.providers.spotify_metadata import parse_spotify_url
+
 from ..core import spotify_search
 from ..core.library import (
     AlbumInfo, _norm, _parse_int, get_index, remove_from_index, rescan,
@@ -290,14 +292,18 @@ def get_album_detail(
         })
     tracks.sort(key=lambda t: (t["disc_number"], t["track_number"]))
     return {
-        "album_artist":     info.album_artist,
-        "album":            info.album,
-        "disc_number":      info.disc_number,
-        "cover_url":        (
+        "album_artist":          info.album_artist,
+        "album":                 info.album,
+        "disc_number":           info.disc_number,
+        "cover_url":             (
             f"/api/library/cover?path={info.cover_path}" if info.cover_path else None
         ),
-        "spotify_album_id": info.spotify_album_id,
-        "tracks":           tracks,
+        "spotify_album_id":      info.spotify_album_id,
+        "verified":              info.last_verified_at is not None,
+        "status":                info.status,
+        "tracks_expected":       info.expected,
+        "missing_track_numbers": info.missing_track_numbers,
+        "tracks":                tracks,
     }
 
 
@@ -398,6 +404,76 @@ class RedownloadRequest(BaseModel):
     path: str
 
 
+# --------------------------------------------------------------------------
+# Redownload whole album (delete all files, enqueue every track)
+# --------------------------------------------------------------------------
+
+class RedownloadAlbumRequest(BaseModel):
+    album_artist: str
+    album: str
+    disc_number: int = 1
+
+
+@router.post("/library/albums/redownload")
+def redownload_album(req: RedownloadAlbumRequest):
+    info = get_index().get_album(req.album_artist, req.album, req.disc_number)
+    if info is None:
+        raise HTTPException(404, "album not in library index")
+    if not info.spotify_album_id:
+        raise HTTPException(
+            409, "album not verified against Spotify; click Verify first"
+        )
+    client = get_client()
+    try:
+        _album, tracks = client.get_album_tracks(info.spotify_album_id)
+    except Exception as e:
+        raise HTTPException(502, f"spotify lookup failed: {e}")
+    all_track_ids = [t.id for t in tracks if t.id]
+    if not all_track_ids:
+        raise HTTPException(404, "no tracks returned by Spotify")
+
+    paths_to_delete = list(info.paths)
+    music_root = MUSIC_DIR.resolve()
+    parent_dirs: set[Path] = set()
+    deleted = 0
+    for raw in paths_to_delete:
+        try:
+            p = Path(raw).resolve()
+            p.relative_to(music_root)
+        except (OSError, ValueError):
+            continue
+        if not p.is_file():
+            continue
+        try:
+            p.unlink()
+        except OSError:
+            continue
+        remove_from_index(p)
+        deleted += 1
+        parent_dirs.add(p.parent)
+    for d in parent_dirs:
+        _cleanup_empty_dirs(d, stop_at=music_root)
+    if deleted:
+        rescan()
+
+    album_url = f"https://open.spotify.com/album/{info.spotify_album_id}"
+    try:
+        result = enqueue_download(
+            DownloadRequest(url=album_url, track_ids=all_track_ids)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"enqueue failed: {e}")
+    return {
+        "deleted_files": deleted,
+        "total_tracks":  len(all_track_ids),
+        "job_ids":       result.get("job_ids", []),
+        "skipped":       result.get("skipped_existing", 0),
+        "errored":       result.get("errored", 0),
+    }
+
+
 @router.post("/library/tracks/redownload")
 def redownload_track(req: RedownloadRequest):
     music_root = MUSIC_DIR.resolve()
@@ -445,4 +521,79 @@ def redownload_track(req: RedownloadRequest):
         "queued":   True,
         "job_ids":  result.get("job_ids", []),
         "track_id": track_id,
+    }
+
+
+# --------------------------------------------------------------------------
+# Unified album view: Spotify tracklist + on-disk overlay
+# --------------------------------------------------------------------------
+
+@router.get("/album")
+def get_unified_album(
+    spotify_id: str | None = Query(None),
+    url: str | None = Query(None),
+):
+    """Return Spotify tracklist for an album with on-disk presence overlay."""
+    if url and not spotify_id:
+        try:
+            info = parse_spotify_url(url)
+        except Exception as e:
+            raise HTTPException(400, f"invalid spotify URL: {e}")
+        if info.get("type") != "album":
+            raise HTTPException(400, "URL is not a Spotify album")
+        spotify_id = info["id"]
+    if not spotify_id:
+        raise HTTPException(400, "must provide spotify_id or url")
+
+    client = get_client()
+    try:
+        album_raw, tracks = client.get_album_tracks(spotify_id)
+    except Exception as e:
+        raise HTTPException(502, f"spotify lookup failed: {e}")
+
+    idx = get_index()
+    enriched = []
+    for t in tracks:
+        local_path = None
+        size: int | None = None
+        isrc = (t.isrc or "").upper().strip()
+        if isrc:
+            local_path = idx.by_isrc.get(isrc)
+        if not local_path:
+            fp = (_norm(t.artists), _norm(t.title), _norm(t.album))
+            if fp != ("", "", ""):
+                local_path = idx.by_fp.get(fp)
+        if local_path:
+            try:
+                size = Path(local_path).stat().st_size
+            except OSError:
+                size = None
+        enriched.append({
+            "spotify_track_id": t.id,
+            "track_number":     t.track_number,
+            "disc_number":      t.disc_number,
+            "title":            t.title,
+            "artists":          t.artists,
+            "album":            t.album,
+            "isrc":             t.isrc,
+            "duration_ms":      t.duration_ms,
+            "on_disk":          bool(local_path),
+            "local_path":       local_path,
+            "size_bytes":       size,
+        })
+
+    cover = (album_raw.get("images") or [{}])[0].get("url", "")
+    artists_str = ", ".join(
+        a.get("name", "") for a in album_raw.get("artists", [])
+    )
+    return {
+        "spotify_album_id": spotify_id,
+        "album":            album_raw.get("name", ""),
+        "album_artist":     artists_str,
+        "cover_url":        cover,
+        "year":             (album_raw.get("release_date") or "")[:4],
+        "spotify_url":      f"https://open.spotify.com/album/{spotify_id}",
+        "total_tracks":     album_raw.get("total_tracks") or len(enriched),
+        "tracks_on_disk":   sum(1 for t in enriched if t["on_disk"]),
+        "tracks":           enriched,
     }

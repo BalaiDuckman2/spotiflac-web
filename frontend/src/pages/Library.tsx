@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronDown, ChevronRight, MoreHorizontal, RefreshCw, Search, Sparkles, Trash2, X,
-  AlertCircle,
+  AlertCircle, Check, Disc3, MoreHorizontal, RefreshCw, Search, Trash2,
 } from 'lucide-react';
 
-import { api, LibraryAlbumDTO, SearchAlbumDTO, VerifyResponseDTO } from '@/lib/api';
+import { api, LibraryAlbumDTO } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 
@@ -75,36 +74,28 @@ export default function Library() {
         </div>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
-            <tr>
-              <th className="w-10 px-3 py-2"></th>
-              <th className="px-3 py-2">Album</th>
-              <th className="w-44 px-3 py-2">Tracks</th>
-              <th className="w-28 px-3 py-2">Status</th>
-              <th className="w-44 px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {albumsQ.data?.items.map((a) => (
-              <AlbumRow key={`${a.album_artist}|${a.album}|${a.disc_number}`} album={a} />
-            ))}
-            {albumsQ.data && albumsQ.data.items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-sm text-gray-400">
-                  {status === 'incomplete'
-                    ? 'No incomplete albums. Nice library!'
-                    : 'Nothing matches.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {albumsQ.isLoading && (
+        <div className="mt-8 text-sm text-gray-400">Chargement…</div>
+      )}
+
+      {albumsQ.data && albumsQ.data.items.length === 0 && (
+        <div className="mt-8 text-center text-sm text-gray-400">
+          {status === 'incomplete'
+            ? 'Aucun album incomplet. Belle librairie !'
+            : 'Aucun résultat.'}
+        </div>
+      )}
+
+      {albumsQ.data && albumsQ.data.items.length > 0 && (
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {albumsQ.data.items.map((a) => (
+            <AlbumCard key={`${a.album_artist}|${a.album}|${a.disc_number}`} album={a} />
+          ))}
+        </div>
+      )}
 
       {albumsQ.data && albumsQ.data.total > limit && (
-        <div className="mt-3 flex items-center justify-center gap-2 text-sm">
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm">
           <button
             disabled={page === 0}
             onClick={() => setPage((p) => p - 1)}
@@ -129,14 +120,11 @@ export default function Library() {
   );
 }
 
-function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
+function AlbumCard({ album }: { album: LibraryAlbumDTO }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
-  const [candidates, setCandidates] = useState<SearchAlbumDTO[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [completeMsg, setCompleteMsg] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<
     | { kind: 'album'; paths: string[] }
     | { kind: 'artist'; paths: string[]; albumCount: number }
@@ -161,7 +149,7 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
       album: album.album,
       disc: String(album.disc_number),
     }).toString();
-    navigate(`/library/album?${qs}`);
+    navigate(`/album?${qs}`);
   };
 
   const openDeleteAlbum = useMutation({
@@ -196,201 +184,98 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
     },
   });
 
-  const verify = useMutation({
-    mutationFn: (spotify_album_id?: string) =>
-      api.library.verify({
-        album_artist: album.album_artist,
-        album: album.album,
-        disc_number: album.disc_number,
-        spotify_album_id,
-      }),
-    onSuccess: (data: VerifyResponseDTO) => {
-      setError(null);
-      if (data.verified) {
-        setCandidates(null);
-        qc.invalidateQueries({ queryKey: ['library-albums'] });
-      } else {
-        setCandidates(data.candidates);
-      }
-    },
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const complete = useMutation({
-    mutationFn: () =>
-      api.library.complete({
-        album_artist: album.album_artist,
-        album: album.album,
-        disc_number: album.disc_number,
-      }),
-    onSuccess: (data) => {
-      setError(null);
-      setCompleteMsg(`Enqueued ${data.job_ids.length} of ${data.missing_count} missing track(s).`);
-      qc.invalidateQueries({ queryKey: ['jobs'] });
-    },
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const ratio = album.tracks_expected
-    ? `${album.tracks_present} / ${album.tracks_expected}`
-    : `${album.tracks_present} / ?`;
-  const pct = album.tracks_expected
-    ? Math.min(100, Math.round((album.tracks_present / album.tracks_expected) * 100))
-    : 0;
-
-  const cover = album.cover_url ?? '';
+  const present = album.tracks_present;
+  const expected = album.tracks_expected;
+  const pct = expected ? Math.min(100, Math.round((present / expected) * 100)) : 0;
 
   return (
-    <>
-      <tr className="border-b border-gray-100 last:border-b-0">
-        <td className="px-3 py-2">
-          <button onClick={() => setExpanded((v) => !v)} className="text-gray-400 hover:text-gray-700">
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-        </td>
-        <td className="px-3 py-2">
-          <button
-            onClick={goToDetail}
-            className="flex w-full items-center gap-3 rounded text-left hover:bg-gray-50"
-            title="Voir les pistes"
-          >
-            <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-gray-100">
-              {cover && <img src={cover} alt="" className="h-full w-full object-cover" />}
-            </div>
-            <div className="min-w-0">
-              <div className="truncate font-medium">
-                {album.album}
-                {album.disc_number > 1 && (
-                  <span className="ml-2 text-xs text-gray-400">(Disc {album.disc_number})</span>
-                )}
-              </div>
-              <div className="truncate text-xs text-gray-500">{album.album_artist}</div>
-            </div>
-          </button>
-        </td>
-        <td className="px-3 py-2">
-          <div className="text-xs text-gray-600">{ratio}</div>
-          {album.tracks_expected && (
-            <div className="mt-1 h-1.5 w-32 overflow-hidden rounded-full bg-gray-100">
-              <div
-                className={cn(
-                  'h-full',
-                  album.status === 'complete' ? 'bg-green-500' : 'bg-yellow-400',
-                )}
-                style={{ width: `${pct}%` }}
-              />
+    <div className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white p-2 transition hover:shadow-md">
+      <button onClick={goToDetail} className="block w-full text-left">
+        <div className="aspect-square overflow-hidden rounded-md bg-gray-100">
+          {album.cover_url ? (
+            <img
+              src={album.cover_url}
+              alt={album.album}
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-gray-300">
+              <Disc3 size={40} />
             </div>
           )}
-        </td>
-        <td className="px-3 py-2">
-          <StatusBadge status={album.status} verified={album.verified} />
-        </td>
-        <td className="px-3 py-2">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => verify.mutate(undefined)}
-                disabled={verify.isPending}
-                className="rounded px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-              >
-                {verify.isPending ? '…' : 'Verify'}
-              </button>
-              {album.status === 'incomplete' && (
-                <button
-                  onClick={() => complete.mutate()}
-                  disabled={complete.isPending}
-                  className="flex items-center gap-1 rounded bg-yellow-300 px-2 py-0.5 text-xs font-semibold text-black hover:bg-yellow-400 disabled:opacity-50"
-                >
-                  <Sparkles size={12} /> {complete.isPending ? '…' : 'Complete'}
-                </button>
-              )}
-              <div className="relative" ref={menuRef}>
-                <button
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                  title="Plus d'actions"
-                >
-                  <MoreHorizontal size={14} />
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
-                    <button
-                      onClick={() => openDeleteAlbum.mutate()}
-                      disabled={openDeleteAlbum.isPending}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <Trash2 size={12} /> Supprimer l'album
-                    </button>
-                    <button
-                      onClick={() => openDeleteArtist.mutate()}
-                      disabled={openDeleteArtist.isPending}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <Trash2 size={12} /> Supprimer l'artiste
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            {completeMsg && <div className="text-[11px] text-green-700">{completeMsg}</div>}
-            {error && (
-              <div className="flex items-center gap-1 text-[11px] text-red-600">
-                <AlertCircle size={11} /> {error}
-              </div>
-            )}
-          </div>
-        </td>
-      </tr>
-
-      {expanded && (
-        <tr className="border-b border-gray-100 bg-gray-50">
-          <td colSpan={5} className="px-3 py-3">
-            <div className="text-xs text-gray-600">
-              {album.tracks_expected ? (
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3 md:grid-cols-4">
-                  {Array.from({ length: album.tracks_expected }, (_, i) => i + 1).map((n) => {
-                    const present = !album.missing_track_numbers.includes(n);
-                    return (
-                      <div key={n} className={cn('flex items-center gap-2', !present && 'text-red-600')}>
-                        <span className={cn('w-5 text-right tabular-nums', present ? 'text-gray-400' : 'text-red-500')}>
-                          {n}
-                        </span>
-                        <span>{present ? '✓' : '✗ missing'}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+        </div>
+        <div className="mt-2 truncate text-sm font-medium" title={album.album}>
+          {album.album}
+          {album.disc_number > 1 && (
+            <span className="ml-1 text-xs text-gray-400">(Disc {album.disc_number})</span>
+          )}
+        </div>
+        <div className="truncate text-xs text-gray-500" title={album.album_artist}>
+          {album.album_artist}
+        </div>
+        <div className="mt-1.5 flex items-center gap-2">
+          {expected ? (
+            <>
+              {album.status === 'complete' ? (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
+                  <Check size={11} /> {present}/{expected}
+                </span>
               ) : (
-                <div className="text-gray-500">
-                  No track-total information. Click <b>Verify</b> to query Spotify.
-                </div>
-              )}
-              <div className="mt-2 text-[11px] text-gray-400">
-                {album.paths_count} file{album.paths_count > 1 ? 's' : ''} on disk
-                {album.spotify_album_id && (
-                  <span className="ml-2">
-                    · spotify:album:<code>{album.spotify_album_id}</code>
+                <>
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-full bg-yellow-400" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-[11px] tabular-nums text-gray-500">
+                    {present}/{expected}
                   </span>
-                )}
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
+                </>
+              )}
+            </>
+          ) : (
+            <span className="text-[11px] text-gray-400">{present} pistes · non vérifié</span>
+          )}
+        </div>
+      </button>
 
-      {candidates && (
-        <tr>
-          <td colSpan={5}>
-            <CandidatesPicker
-              candidates={candidates}
-              onPick={(id) => {
-                setCandidates(null);
-                verify.mutate(id);
-              }}
-              onClose={() => setCandidates(null)}
-            />
-          </td>
-        </tr>
+      <div className="absolute right-2 top-2" ref={menuRef}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen((v) => !v);
+          }}
+          className={cn(
+            'rounded-full bg-white/90 p-1 shadow transition',
+            menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+          title="Plus d'actions"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+            <button
+              onClick={() => openDeleteAlbum.mutate()}
+              disabled={openDeleteAlbum.isPending}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 size={12} /> Supprimer l'album
+            </button>
+            <button
+              onClick={() => openDeleteArtist.mutate()}
+              disabled={openDeleteArtist.isPending}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 size={12} /> Supprimer l'artiste
+            </button>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-1 flex items-center gap-1 text-[10px] text-red-600">
+          <AlertCircle size={10} /> {error}
+        </div>
       )}
 
       {confirm && confirm.kind === 'album' && (
@@ -413,68 +298,6 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
           onConfirm={() => deleteMut.mutate(confirm.paths)}
         />
       )}
-    </>
-  );
-}
-
-function StatusBadge({ status, verified }: { status: string; verified: boolean }) {
-  const styles: Record<string, string> = {
-    complete: 'bg-green-100 text-green-700',
-    incomplete: 'bg-yellow-100 text-yellow-800',
-    unknown: 'bg-gray-100 text-gray-600',
-  };
-  return (
-    <div className="flex items-center gap-1">
-      <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase', styles[status])}>
-        {status}
-      </span>
-      {verified && (
-        <span className="text-[10px] text-gray-400" title="Verified against Spotify">✓</span>
-      )}
-    </div>
-  );
-}
-
-function CandidatesPicker({
-  candidates,
-  onPick,
-  onClose,
-}: {
-  candidates: SearchAlbumDTO[];
-  onPick: (id: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="m-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs font-semibold text-yellow-900">
-          Multiple matches — pick the right one
-        </div>
-        <button onClick={onClose} className="rounded p-0.5 text-gray-500 hover:bg-yellow-100">
-          <X size={12} />
-        </button>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-        {candidates.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => onPick(c.id)}
-            className="flex items-center gap-2 rounded border border-yellow-200 bg-white p-2 text-left text-sm hover:bg-yellow-100"
-          >
-            <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-gray-100">
-              {c.cover_url && <img src={c.cover_url} alt="" className="h-full w-full object-cover" />}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{c.title}</div>
-              <div className="truncate text-xs text-gray-500">
-                {c.artists}
-                {c.year && ` · ${c.year}`}
-                {c.total_tracks ? ` · ${c.total_tracks} tracks` : ''}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

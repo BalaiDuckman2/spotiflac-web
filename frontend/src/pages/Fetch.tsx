@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, ArrowUp, X } from 'lucide-react';
 
-import { api, JobDTO, PreviewDTO, TrackDTO } from '@/lib/api';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDuration } from '@/lib/format';
 
@@ -162,6 +162,10 @@ export default function FetchPage() {
     return <div className="p-8 text-sm text-red-600">{(previewQ.error as Error).message}</div>;
   }
   if (!preview) return null;
+  // Albums have their own unified page now.
+  if (preview.kind === 'album') {
+    return <Navigate to={`/album?url=${encodeURIComponent(url)}`} replace />;
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-8 pb-24 pt-8">

@@ -151,7 +151,7 @@ function AlbumRow({ item }: { item: SearchAlbumDTO }) {
       primary={item.title}
       secondary={`${item.artists}${item.year ? ` · ${item.year}` : ''}`}
       tertiary={`${item.total_tracks} tracks`}
-      onClick={() => navigate(`/fetch?url=${encodeURIComponent(item.url)}`)}
+      onClick={() => navigate(`/album?url=${encodeURIComponent(item.url)}`)}
     />
   );
 }

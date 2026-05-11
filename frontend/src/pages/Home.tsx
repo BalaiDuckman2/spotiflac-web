@@ -34,7 +34,11 @@ export default function Home() {
     mutationFn: (u: string) => api.preview(u),
     onSuccess: (data) => {
       qc.setQueryData(['preview', data.url], data);
-      navigate(`/fetch?url=${encodeURIComponent(data.url)}`);
+      if (data.kind === 'album') {
+        navigate(`/album?url=${encodeURIComponent(data.url)}`);
+      } else {
+        navigate(`/fetch?url=${encodeURIComponent(data.url)}`);
+      }
     },
   });
 
@@ -123,8 +127,12 @@ export default function Home() {
           <button
             key={f.id}
             onClick={() => {
-              setInput(f.url);
-              previewMut.mutate(f.url);
+              if (f.kind === 'album') {
+                navigate(`/album?url=${encodeURIComponent(f.url)}`);
+              } else {
+                setInput(f.url);
+                previewMut.mutate(f.url);
+              }
             }}
             className="group relative overflow-hidden rounded-lg border border-gray-200 bg-white p-2 text-left hover:shadow-md"
           >

@@ -83,7 +83,37 @@ export type LibraryAlbumDetailDTO = {
   disc_number: number;
   cover_url: string | null;
   spotify_album_id: string | null;
+  verified: boolean;
+  status: 'complete' | 'incomplete' | 'unknown';
+  tracks_expected: number | null;
+  missing_track_numbers: number[];
   tracks: LibraryTrackDTO[];
+};
+
+export type AlbumTrackDTO = {
+  spotify_track_id: string;
+  track_number: number;
+  disc_number: number;
+  title: string;
+  artists: string;
+  album: string;
+  isrc: string;
+  duration_ms: number;
+  on_disk: boolean;
+  local_path: string | null;
+  size_bytes: number | null;
+};
+
+export type AlbumDTO = {
+  spotify_album_id: string;
+  album: string;
+  album_artist: string;
+  cover_url: string;
+  year: string;
+  spotify_url: string;
+  total_tracks: number;
+  tracks_on_disk: number;
+  tracks: AlbumTrackDTO[];
 };
 
 export type VerifyResponseDTO =
@@ -263,6 +293,26 @@ export const api = {
         '/api/library/tracks/redownload',
         { method: 'POST', body: JSON.stringify({ path }) },
       ),
+    redownloadAlbum: (album_artist: string, album: string, disc_number = 1) =>
+      request<{
+        deleted_files: number;
+        total_tracks: number;
+        job_ids: string[];
+        skipped: number;
+        errored: number;
+      }>('/api/library/albums/redownload', {
+        method: 'POST',
+        body: JSON.stringify({ album_artist, album, disc_number }),
+      }),
+  },
+
+  album: {
+    get: (params: { spotify_id?: string; url?: string }) => {
+      const qs = new URLSearchParams();
+      if (params.spotify_id) qs.set('spotify_id', params.spotify_id);
+      if (params.url) qs.set('url', params.url);
+      return request<AlbumDTO>(`/api/album?${qs.toString()}`);
+    },
   },
 
   search: (q: string, types: string[] = ['track', 'album', 'playlist', 'artist'], limit = 20) =>
