@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, RefreshCw, Search, Sparkles, X, AlertCircle } from 'lucide-react';
+import {
+  ChevronDown, ChevronRight, MoreHorizontal, RefreshCw, Search, Sparkles, Trash2, X,
+  AlertCircle,
+} from 'lucide-react';
 
 import { api, LibraryAlbumDTO, SearchAlbumDTO, VerifyResponseDTO } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 
 type StatusFilter = 'incomplete' | 'all' | 'complete' | 'unknown';
 
@@ -126,10 +131,70 @@ export default function Library() {
 
 function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [candidates, setCandidates] = useState<SearchAlbumDTO[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completeMsg, setCompleteMsg] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirm, setConfirm] = useState<
+    | { kind: 'album'; paths: string[] }
+    | { kind: 'artist'; paths: string[]; albumCount: number }
+    | null
+  >(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
+  }, [menuOpen]);
+
+  const goToDetail = () => {
+    const qs = new URLSearchParams({
+      artist: album.album_artist,
+      album: album.album,
+      disc: String(album.disc_number),
+    }).toString();
+    navigate(`/library/album?${qs}`);
+  };
+
+  const openDeleteAlbum = useMutation({
+    mutationFn: () =>
+      api.library.albumDetail(album.album_artist, album.album, album.disc_number),
+    onSuccess: (data) => {
+      setMenuOpen(false);
+      setConfirm({ kind: 'album', paths: data.tracks.map((t) => t.path) });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const openDeleteArtist = useMutation({
+    mutationFn: () => api.library.artistPaths(album.album_artist),
+    onSuccess: (data) => {
+      setMenuOpen(false);
+      setConfirm({ kind: 'artist', paths: data.paths, albumCount: data.album_count });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (paths: string[]) => api.library.deleteTracks(paths),
+    onSuccess: () => {
+      setConfirm(null);
+      setError(null);
+      qc.invalidateQueries({ queryKey: ['library-albums'] });
+    },
+    onError: (e: Error) => {
+      setError(e.message);
+      setConfirm(null);
+    },
+  });
 
   const verify = useMutation({
     mutationFn: (spotify_album_id?: string) =>
@@ -184,7 +249,11 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
           </button>
         </td>
         <td className="px-3 py-2">
-          <div className="flex items-center gap-3">
+          <button
+            onClick={goToDetail}
+            className="flex w-full items-center gap-3 rounded text-left hover:bg-gray-50"
+            title="Voir les pistes"
+          >
             <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded bg-gray-100">
               {cover && <img src={cover} alt="" className="h-full w-full object-cover" />}
             </div>
@@ -197,7 +266,7 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
               </div>
               <div className="truncate text-xs text-gray-500">{album.album_artist}</div>
             </div>
-          </div>
+          </button>
         </td>
         <td className="px-3 py-2">
           <div className="text-xs text-gray-600">{ratio}</div>
@@ -218,7 +287,7 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
         </td>
         <td className="px-3 py-2">
           <div className="flex flex-col gap-1">
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => verify.mutate(undefined)}
                 disabled={verify.isPending}
@@ -235,6 +304,33 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
                   <Sparkles size={12} /> {complete.isPending ? '…' : 'Complete'}
                 </button>
               )}
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  title="Plus d'actions"
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <button
+                      onClick={() => openDeleteAlbum.mutate()}
+                      disabled={openDeleteAlbum.isPending}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={12} /> Supprimer l'album
+                    </button>
+                    <button
+                      onClick={() => openDeleteArtist.mutate()}
+                      disabled={openDeleteArtist.isPending}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 size={12} /> Supprimer l'artiste
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {completeMsg && <div className="text-[11px] text-green-700">{completeMsg}</div>}
             {error && (
@@ -295,6 +391,27 @@ function AlbumRow({ album }: { album: LibraryAlbumDTO }) {
             />
           </td>
         </tr>
+      )}
+
+      {confirm && confirm.kind === 'album' && (
+        <ConfirmDeleteModal
+          open
+          title={`Supprimer l'album « ${album.album} » ?`}
+          warning={`${confirm.paths.length} piste${confirm.paths.length > 1 ? 's' : ''} de ${album.album_artist}`}
+          loading={deleteMut.isPending}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => deleteMut.mutate(confirm.paths)}
+        />
+      )}
+      {confirm && confirm.kind === 'artist' && (
+        <ConfirmDeleteModal
+          open
+          title={`Supprimer tous les albums de « ${album.album_artist} » ?`}
+          warning={`${confirm.albumCount} album${confirm.albumCount > 1 ? 's' : ''} · ${confirm.paths.length} piste${confirm.paths.length > 1 ? 's' : ''}`}
+          loading={deleteMut.isPending}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => deleteMut.mutate(confirm.paths)}
+        />
       )}
     </>
   );

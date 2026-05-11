@@ -11,7 +11,9 @@ from mutagen.flac import FLAC
 from pydantic import BaseModel
 
 from ..core import spotify_search
-from ..core.library import AlbumInfo, _norm, get_index, rescan
+from ..core.library import (
+    AlbumInfo, _norm, _parse_int, get_index, remove_from_index, rescan,
+)
 from ..core.metadata import get_client
 from ..core.settings import MUSIC_DIR
 from .download import DownloadRequest, enqueue_download
@@ -247,3 +249,200 @@ def get_cover(path: str = Query(...)):
         media_type=pic.mime or "image/jpeg",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+# --------------------------------------------------------------------------
+# Album detail (per-track listing)
+# --------------------------------------------------------------------------
+
+@router.get("/library/album")
+def get_album_detail(
+    artist: str = Query(...),
+    album: str = Query(...),
+    disc: int = Query(1),
+):
+    info = get_index().get_album(artist, album, disc)
+    if info is None:
+        raise HTTPException(404, "album not in library index")
+    tracks = []
+    for raw in info.paths:
+        p = Path(raw)
+        if not p.exists() or not p.is_file():
+            continue
+        try:
+            flac = FLAC(p)
+        except Exception:
+            continue
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        duration = int(flac.info.length) if flac.info else 0
+        tracks.append({
+            "path":         str(p),
+            "track_number": _parse_int(flac.get("TRACKNUMBER"), default=0) or 0,
+            "disc_number":  _parse_int(flac.get("DISCNUMBER"), default=1) or 1,
+            "title":        (flac.get("TITLE") or [""])[0],
+            "artist":       (flac.get("ARTIST") or [""])[0],
+            "duration_sec": duration,
+            "size_bytes":   size,
+            "isrc":         (flac.get("ISRC") or [""])[0],
+        })
+    tracks.sort(key=lambda t: (t["disc_number"], t["track_number"]))
+    return {
+        "album_artist":     info.album_artist,
+        "album":            info.album,
+        "disc_number":      info.disc_number,
+        "cover_url":        (
+            f"/api/library/cover?path={info.cover_path}" if info.cover_path else None
+        ),
+        "spotify_album_id": info.spotify_album_id,
+        "tracks":           tracks,
+    }
+
+
+# --------------------------------------------------------------------------
+# Artist paths helper (used by "delete artist" in the UI)
+# --------------------------------------------------------------------------
+
+@router.get("/library/artist/paths")
+def get_artist_paths(artist: str = Query(...)):
+    artist_n = _norm(artist)
+    paths: list[str] = []
+    album_count = 0
+    # list_albums returns a locked snapshot; we filter by exact normalized artist.
+    items, _ = get_index().list_albums(status="all", search="", limit=10_000, offset=0)
+    for info in items:
+        if _norm(info.album_artist) == artist_n:
+            paths.extend(info.paths)
+            album_count += 1
+    return {"artist": artist, "paths": paths, "album_count": album_count}
+
+
+# --------------------------------------------------------------------------
+# Delete tracks (batch)
+# --------------------------------------------------------------------------
+
+class DeleteTracksRequest(BaseModel):
+    paths: list[str]
+
+
+def _cleanup_empty_dirs(d: Path, *, stop_at: Path) -> None:
+    """Remove `d` and its parents up to (but not including) `stop_at` while empty."""
+    cur = d
+    while cur != stop_at:
+        try:
+            cur.relative_to(stop_at)
+        except ValueError:
+            return
+        if not cur.exists() or not cur.is_dir():
+            return
+        try:
+            next(cur.iterdir())
+            return  # not empty
+        except StopIteration:
+            pass
+        try:
+            cur.rmdir()
+        except OSError:
+            return
+        cur = cur.parent
+
+
+@router.post("/library/tracks/delete")
+def delete_tracks(req: DeleteTracksRequest):
+    if not req.paths:
+        return {"deleted": 0, "freed_bytes": 0, "errors": 0}
+    music_root = MUSIC_DIR.resolve()
+    deleted = 0
+    freed = 0
+    errors = 0
+    parent_dirs: set[Path] = set()
+    for raw in req.paths:
+        try:
+            p = Path(raw).resolve()
+            p.relative_to(music_root)  # path-traversal guard
+        except (OSError, ValueError):
+            errors += 1
+            continue
+        if not p.is_file():
+            errors += 1
+            continue
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        try:
+            p.unlink()
+        except OSError:
+            errors += 1
+            continue
+        remove_from_index(p)
+        deleted += 1
+        freed += size
+        parent_dirs.add(p.parent)
+    for d in parent_dirs:
+        _cleanup_empty_dirs(d, stop_at=music_root)
+    # Force a rescan so AlbumInfo.track_numbers reflects reality
+    # (remove_from_index drops the path but leaves stale track_numbers).
+    if deleted:
+        rescan()
+    return {"deleted": deleted, "freed_bytes": freed, "errors": errors}
+
+
+# --------------------------------------------------------------------------
+# Redownload one track (delete file, enqueue via existing download flow)
+# --------------------------------------------------------------------------
+
+class RedownloadRequest(BaseModel):
+    path: str
+
+
+@router.post("/library/tracks/redownload")
+def redownload_track(req: RedownloadRequest):
+    music_root = MUSIC_DIR.resolve()
+    try:
+        p = Path(req.path).resolve()
+        p.relative_to(music_root)
+    except (OSError, ValueError):
+        raise HTTPException(400, "invalid path")
+    if not p.is_file():
+        raise HTTPException(404, "file not found")
+    try:
+        flac = FLAC(p)
+    except Exception:
+        raise HTTPException(415, "not a FLAC file")
+    isrc = (flac.get("ISRC") or [""])[0].upper().strip()
+    if not isrc:
+        raise HTTPException(
+            422, "track has no ISRC tag; cannot resolve Spotify ID for redownload"
+        )
+    # Search Spotify by ISRC: the /search endpoint accepts `q=isrc:XXX`.
+    try:
+        results = spotify_search.search(f"isrc:{isrc}", ["track"], limit=1)
+    except Exception as e:
+        raise HTTPException(502, f"spotify search failed: {e}")
+    tracks = results.get("tracks", [])
+    if not tracks:
+        raise HTTPException(404, "no Spotify match for this ISRC")
+    track_id = tracks[0].get("id")
+    if not track_id:
+        raise HTTPException(404, "spotify match missing id")
+    # Delete existing file so the new download writes to the same target.
+    try:
+        p.unlink()
+    except OSError as e:
+        raise HTTPException(500, f"could not delete existing file: {e}")
+    remove_from_index(p)
+    url = f"https://open.spotify.com/track/{track_id}"
+    try:
+        result = enqueue_download(DownloadRequest(url=url, track_ids=[track_id]))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"enqueue failed: {e}")
+    return {
+        "queued":   True,
+        "job_ids":  result.get("job_ids", []),
+        "track_id": track_id,
+    }

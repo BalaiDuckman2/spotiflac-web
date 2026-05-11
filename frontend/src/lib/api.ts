@@ -66,6 +66,26 @@ export type LibraryAlbumDTO = {
   paths_count: number;
 };
 
+export type LibraryTrackDTO = {
+  path: string;
+  track_number: number;
+  disc_number: number;
+  title: string;
+  artist: string;
+  duration_sec: number;
+  size_bytes: number;
+  isrc: string;
+};
+
+export type LibraryAlbumDetailDTO = {
+  album_artist: string;
+  album: string;
+  disc_number: number;
+  cover_url: string | null;
+  spotify_album_id: string | null;
+  tracks: LibraryTrackDTO[];
+};
+
 export type VerifyResponseDTO =
   | {
       verified: true;
@@ -225,6 +245,24 @@ export const api = {
         { method: 'POST', body: JSON.stringify(body) },
       ),
     coverUrl: (path: string) => `/api/library/cover?path=${encodeURIComponent(path)}`,
+    albumDetail: (artist: string, album: string, disc = 1) =>
+      request<LibraryAlbumDetailDTO>(
+        `/api/library/album?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}&disc=${disc}`,
+      ),
+    artistPaths: (artist: string) =>
+      request<{ artist: string; paths: string[]; album_count: number }>(
+        `/api/library/artist/paths?artist=${encodeURIComponent(artist)}`,
+      ),
+    deleteTracks: (paths: string[]) =>
+      request<{ deleted: number; freed_bytes: number; errors: number }>(
+        '/api/library/tracks/delete',
+        { method: 'POST', body: JSON.stringify({ paths }) },
+      ),
+    redownloadTrack: (path: string) =>
+      request<{ queued: boolean; job_ids: string[]; track_id: string }>(
+        '/api/library/tracks/redownload',
+        { method: 'POST', body: JSON.stringify({ path }) },
+      ),
   },
 
   search: (q: string, types: string[] = ['track', 'album', 'playlist', 'artist'], limit = 20) =>
